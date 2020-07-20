@@ -105,15 +105,25 @@ class Bot(commands.Bot, ABC):  # set up the bot
         # await ctx.channel.send(ctx.content)
 
         if 'pizza time' in ctx.content.lower():
-            await ctx.channel.send("Pizza Time is not a meme!")
+            pizzaCoolDown = time.time() - self.pizzaLastTime
+            if pizzaCoolDown > 10:
+                await ctx.channel.send("Pizza Time is not a meme!")
+                self.pizzaLastTime = time.time()
 
         if 'MrDestructoid' in ctx.content:
-            await ctx.channel.send("MrDestructoid 01000010 01010010 01001111 01010100"
-                                   " 01001000 01000101 01010010 MrDestructoid ")
+            botCoolDown = time.time() - self.botLastTime
+            if botCoolDown > 10:
+                await ctx.channel.send("MrDestructoid 01000010 01010010 01001111 01010100"
+                                       " 01001000 01000101 01010010 MrDestructoid ")
+                self.botLastTime = time.time()
 
         if 'rooBot' in ctx.content:
-            await ctx.channel.send("MrDestructoid 01000010 01010111 01010101 01010100"
-                                   " 01001000 01000101 01010010 MrDestructoid ")
+            botCoolDown = time.time() - self.botLastTime
+            print(botCoolDown)
+            if botCoolDown > 10:
+                await ctx.channel.send("MrDestructoid 01000010 01010111 01010101 01010100"
+                                       " 01001000 01000101 01010010 MrDestructoid ")
+                self.botLastTime = time.time()
 
     """@commands.command(name='test')
     async def test(ctx):
@@ -183,18 +193,17 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     @commands.command(name='points')  # checks for current points
     async def points(self, ctx):
-        viewerName = ctx.author.name
-        pointsConnection = self.create_connection(".\\points.sqlite")
-        select_users = "SELECT points from PointsTracking where name = ?"
-        viewers = self.execute_pointsDB_read_query(pointsConnection, select_users, (viewerName,))
-        if viewers:
-            for viewerRow in viewers:
-                await ctx.channel.send(str(viewerName) + ", you have " + str(viewerRow[0]) + " grtOne ")
-        else:
-            await ctx.channel.send(str(viewerName) + ", you have 0 grtOne ")
+        await self.pointcheckcall(ctx)
 
     @commands.command(name='pints')  # checks for current points
     async def pints(self, ctx):
+        await self.pointcheckcall(ctx)
+
+    @commands.command(name='b1rs')  # checks for current points
+    async def b1rs(self, ctx):
+        await self.pointcheckcall(ctx)
+
+    async def pointcheckcall(self, ctx):
         viewerName = ctx.author.name
         pointsConnection = self.create_connection(".\\points.sqlite")
         select_users = "SELECT points from PointsTracking where name = ?"
@@ -619,6 +628,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
         except Error as e:
             print(f"The error '{e}' occurred")
 
+    pizzaLastTime = 0
+    botLastTime = 0
     raffleObject = Raffle()
     pointsPerMinute = 10
     raffleTicketCost = 500
