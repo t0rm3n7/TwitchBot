@@ -58,6 +58,7 @@ class Raffle:
 
     def draw_winner(self, channelName):
         if len(self.ticketList) < 1:
+            self.close_raffle(channelName)
             return None
         else:
             winningTicket = random.randrange(0, len(self.ticketList))
