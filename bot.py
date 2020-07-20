@@ -362,7 +362,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     await ctx.channel.send("Started a WAFFLE for the following prize: " + rafflePrize +
                                            ". Get your tickets using the !buytickets command! Everyone gets one free "
                                            "entry, but you can keep watching the stream to get points ( grtOne ) "
-                                           "to buy tickets!")
+                                           "to buy tickets! Each ticket is 500 grtOne so spend wisely, or use !gamble "
+                                           "to get more points!")
 
     @commands.command(name='loadraffle')
     async def loadraffle(self, ctx):
@@ -452,12 +453,16 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                                                    " grtOne available. However, everyone gets one free "
                                                                    "entry, so you now have 1 ticket in the raffle! Keep"
                                                                    " watching the stream, and you'll earn more points "
-                                                                   "to spend on tickets!")
+                                                                   "to spend on tickets! Tickets are 500 grtOne each, "
+                                                                   "so you can purchase up to " +
+                                                                   str(int(currentPoints/500)) + " tickets right now.")
                                         else:
                                             await ctx.channel.send(str(viewerName) + ", you cannot buy that many "
                                                                    "tickets! You only have " + str(currentPoints) +
                                                                    " grtOne available, and your free ticket has already"
-                                                                   " been claimed")
+                                                                   " been claimed. Tickets are 500 grtOne each, so you "
+                                                                   "can purchase up to " + str(int(currentPoints/500))
+                                                                   + " tickets right now.")
                                     else:
                                         self.raffleObject.add_tickets(channelName, viewerName, int(numTickets))
                                         currentPoints -= cost
@@ -485,7 +490,9 @@ class Bot(commands.Bot, ABC):  # set up the bot
                             else:
                                 await ctx.channel.send("You have no grtOne to spend on tickets! "
                                                        "However, everyone gets one free entry! Keep watching the stream"
-                                                       ", and you'll earn more points to spend on tickets!")
+                                                       ", and you'll earn more points to spend on tickets! Tickets are "
+                                                       "500 grtOne each, so look out for bonuses or try gambling for "
+                                                       "extra points!")
                                 self.raffleObject.add_tickets(channelName, viewerName, 1)
                 else:
                     await ctx.channel.send("Example command usage: "
