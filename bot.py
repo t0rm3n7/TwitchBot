@@ -41,51 +41,52 @@ class Bot(commands.Bot, ABC):  # set up the bot
         self.loop.call_later(30, self.list_chatters)  # used to get list of current viewers in chat, every minute
 
     def list_chatters(self, points=0):
-        viewerlist = asyncio.gather(self.get_chatters(os.environ['CHANNEL']))  # gathers list from twitch
-        viewerlist.add_done_callback(functools.partial(self.accumulate_points, points))
-        # when list is complete, passes viewerlist to acc_points
+        isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
+        if isLive:
+            viewerlist = asyncio.gather(self.get_chatters(os.environ['CHANNEL']))  # gathers list from twitch
+            viewerlist.add_done_callback(functools.partial(self.accumulate_points, points))
+            # when list is complete, passes viewerlist to acc_points
+        else:
+            print(os.environ['CHANNEL'] + " is not live. " + str(time.time()))
+            print(isLive)
+            self.loop.call_later(60, self.list_chatters)
 
     def accumulate_points(self, pointsToAdd, viewerlist):
         accFlag = 0
         if pointsToAdd == 0:
-            print("accumulating" + str(time.time()))
-            isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
+            print("accumulating " + str(time.time()))
             pointsToAdd = self.pointsPerMinute
             accFlag = 1
         else:
             print("BONUS!")
             isLive = True
-        if isLive:
-            pointsConnection = self.create_connection(".\\points.sqlite")
-            try:
-                viewerTuple = viewerlist.result()[0]
-            except Exception:
-                if accFlag == 1:
-                    self.loop.call_later(1, self.list_chatters)
-                    return 1
-                else:
-                    print("Couldn't return viewers for bonus")
-                    return 1
-            # print(viewerTuple.all)
-            for viewerName in viewerTuple.all:
-                select_points = "SELECT id, points from PointsTracking where name = ?"
-                viewers = self.execute_pointsDB_read_query(pointsConnection, select_points, (viewerName,))
-                if viewers:
-                    # updating
-                    for viewerRow in viewers:
-                        newPoints = int(viewerRow[1]) + pointsToAdd
-                        update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerRow[0])
-                        self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                          (newPoints,))
-                else:
-                    # insert
-                    insert_points = "INSERT into PointsTracking (channel, name, points) VALUES (?, ?, ?)"
-                    self.execute_pointsDB_write_query(pointsConnection, insert_points,
-                                                      (os.environ['CHANNEL'], viewerName, pointsToAdd))
-        elif not isLive:
-            print(os.environ['CHANNEL'] + " is not live.")
-        else:
-            print(isLive)
+        pointsConnection = self.create_connection(".\\points.sqlite")
+        try:
+            viewerTuple = viewerlist.result()[0]
+        except Exception:
+            if accFlag == 1:
+                self.loop.call_later(1, self.list_chatters)
+                return 1
+            else:
+                print("Couldn't return viewer(s) for bonus")
+                return 1
+        # print(viewerTuple.all)
+        for viewerName in viewerTuple.all:
+            select_points = "SELECT id, points from PointsTracking where name = ?"
+            viewers = self.execute_pointsDB_read_query(pointsConnection, select_points, (viewerName,))
+            if viewers:
+                # updating
+                for viewerRow in viewers:
+                    newPoints = int(viewerRow[1]) + pointsToAdd
+                    update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerRow[0])
+                    self.execute_pointsDB_write_query(pointsConnection, update_points,
+                                                      (newPoints,))
+            else:
+                # insert
+                insert_points = "INSERT into PointsTracking (channel, name, points) VALUES (?, ?, ?)"
+                self.execute_pointsDB_write_query(pointsConnection, insert_points,
+                                                  (os.environ['CHANNEL'], viewerName, pointsToAdd))
+
         if accFlag == 1:
             self.loop.call_later(60, self.list_chatters)
 
