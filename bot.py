@@ -28,6 +28,9 @@ class Bot(commands.Bot, ABC):  # set up the bot
         super().__init__(
             irc_token=os.environ['TMI_TOKEN'],
             client_id=os.environ['CLIENT_ID'],
+            client_secret=os.environ['CLIENT_SECRET'],
+            api_token=os.environ['API_TOKEN'],
+            scopes=[os.environ['SCOPES']],
             nick=os.environ['BOT_NICK'],
             prefix=os.environ['BOT_PREFIX'],
             initial_channels=[os.environ['CHANNEL']]
@@ -38,7 +41,13 @@ class Bot(commands.Bot, ABC):  # set up the bot
         print(f"{os.environ['BOT_NICK']} is online!")
         ws = self._ws  # this is only needed to send messages within event_ready
         await ws.send_privmsg(os.environ['CHANNEL'], f"/me is now online! MrDestructoid ")
-        self.loop.call_later(30, self.list_chatters)  # used to get list of current viewers in chat, every minute
+        """await self.pubsub_subscribe(os.environ['API_TOKEN'],
+                                    "channel-bits-events-v1.40208771",
+                                    "channel-bits-events-v2.40208771",
+                                    "channel-points-channel-v1.40208771")"""
+        if self.botStarted == 0:
+            self.loop.call_later(30, self.list_chatters)  # used to get list of current viewers in chat, every minute
+            self.botStarted = 1
 
     def list_chatters(self, points=0):
         isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
@@ -90,9 +99,12 @@ class Bot(commands.Bot, ABC):  # set up the bot
         if accFlag == 1:
             self.loop.call_later(60, self.list_chatters)
 
-    # async def event_raw_data(self, data):
-        # """Prints every chat event."""
-        # print(data)
+    """async def event_raw_data(self, data):
+        # Prints every chat event.
+        print(data)"""
+
+    async def event_raw_pubsub(self, data):
+        print(data)
 
     async def event_message(self, ctx):
         """Runs every time a message is sent in chat."""
@@ -640,6 +652,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
         except Error as e:
             print(f"The error '{e}' occurred")
 
+    botStarted = 0
     pizzaLastTime = 0
     botLastTime = 0
     raffleObject = Raffle()
