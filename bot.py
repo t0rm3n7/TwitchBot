@@ -51,14 +51,16 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     def list_chatters(self, points=0):
         isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
-        if isLive:
+        if isLive is True:
             viewerlist = asyncio.gather(self.get_chatters(os.environ['CHANNEL']))  # gathers list from twitch
             viewerlist.add_done_callback(functools.partial(self.accumulate_points, points))
             # when list is complete, passes viewerlist to acc_points
-        else:
+        elif isLive is False:
             print(os.environ['CHANNEL'] + " is not live. " + str(time.time()))
             print(isLive)
             self.loop.call_later(60, self.list_chatters)
+        else:
+            print("Unable to reach Twitch API at " + str(time.time()))
 
     def accumulate_points(self, pointsToAdd, viewerlist):
         accFlag = 0
@@ -408,7 +410,10 @@ class Bot(commands.Bot, ABC):  # set up the bot
             raffleTickets = self.raffleObject.get_total_tickets()
             await ctx.channel.send("Gilder is currently raffling off: " + rafflePrize +
                                    ". There are " + str(raffleTickets) + " tickets currently in the pool. "
-                                   "Get your tickets using the !buytickets command!")
+                                   "Get your tickets using the !buytickets command! Everyone gets one free entry, but "
+                                   "you can keep watching the stream to get points ( grtOne ) to buy tickets! Each "
+                                   "ticket is " + str(self.raffleTicketCost) + " grtOne so spend wisely, or use !gamble"
+                                   " to get more points!")
 
     @commands.command(name='buyticket')
     async def buyticket(self, ctx):
