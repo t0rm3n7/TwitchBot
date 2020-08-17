@@ -2,6 +2,7 @@ import urllib.request
 import urllib.error
 import requests
 import json
+import os
 from authlib.integrations.requests_client import OAuth2Session
 
 
@@ -12,15 +13,18 @@ def get_access_token():
     callback_uri = "http://localhost:28888"
 
     # client (application) credentials
-    client_id = '301fbt6wgu2wzn7f6s3js7t7nyaze1'
-    client_secret = 'pevv0t36avp0ed85xbxmoo4l244qes'
+    client_id = os.environ['CLIENT_ID']
+    client_secret = os.environ['CLIENT_SECRET']
 
     client = OAuth2Session(client_id, client_secret, redirect_uri=callback_uri)
 
     uri, state = client.create_authorization_url(authorize_url, response_type='token')
 
+    # print(uri)
+
     authorization_response = \
-        'http://localhost:28888/#access_token=3awghb844sdbusoig8kwc24w80an0q&scope=&token_type=bearer'
+        'http://localhost:28888/#access_token=ycmn84cqn8c33iuoo9t2u5w012crh6&scope=&' \
+        'state=c54Iv7uDOrQjoMcXbYaWMDLtHG0LaB&token_type=bearer'
     token = client.fetch_token(authorization_response=authorization_response)
     return token
 
@@ -47,5 +51,6 @@ def liveCheck(chan_name):
     except Exception as e:
         print('gettwitchapi', e)
         return e
+
 
 # liveCheck("TheGreatGildersneeze")

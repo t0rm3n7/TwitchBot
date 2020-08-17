@@ -57,10 +57,13 @@ class Bot(commands.Bot, ABC):  # set up the bot
             # when list is complete, passes viewerlist to acc_points
         elif isLive is False:
             print(os.environ['CHANNEL'] + " is not live. " + str(time.time()))
-            print(isLive)
-            self.loop.call_later(60, self.list_chatters)
+            self.loop.call_later(30, self.list_chatters)
         else:
-            print("Unable to reach Twitch API at " + str(time.time()))
+            print("Unable to reach Twitch API at " + str(time.time()) + ". " + str(isLive))
+            if re.search(r"HTTP Error 4\d{2}", str(isLive)):
+                print("Fatal Error with LiveCheck, please check credentials.")
+            else:
+                self.loop.call_later(1, self.list_chatters)
 
     def accumulate_points(self, pointsToAdd, viewerlist):
         accFlag = 0
@@ -69,16 +72,14 @@ class Bot(commands.Bot, ABC):  # set up the bot
             pointsToAdd = self.pointsPerMinute
             accFlag = 1
         else:
-            print("BONUS!")
-            isLive = True
+            print("BONUS! " + pointsToAdd)
+        if accFlag == 1:
+            self.loop.call_later(60, self.list_chatters)
         pointsConnection = self.create_connection(".\\points.sqlite")
         try:
             viewerTuple = viewerlist.result()[0]
         except Exception:
-            if accFlag == 1:
-                self.loop.call_later(1, self.list_chatters)
-                return 1
-            else:
+            if accFlag != 1:
                 print("Couldn't return viewer(s) for bonus")
                 return 1
         # print(viewerTuple.all)
@@ -97,9 +98,6 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 insert_points = "INSERT into PointsTracking (channel, name, points) VALUES (?, ?, ?)"
                 self.execute_pointsDB_write_query(pointsConnection, insert_points,
                                                   (os.environ['CHANNEL'], viewerName, pointsToAdd))
-
-        if accFlag == 1:
-            self.loop.call_later(60, self.list_chatters)
 
     """async def event_raw_data(self, data):
         # Prints every chat event.
