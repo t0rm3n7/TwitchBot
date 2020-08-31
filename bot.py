@@ -72,7 +72,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
             pointsToAdd = self.pointsPerMinute
             accFlag = 1
         else:
-            print("BONUS! " + pointsToAdd)
+            print("BONUS! " + str(pointsToAdd))
         if accFlag == 1:
             self.loop.call_later(60, self.list_chatters)
         pointsConnection = self.create_connection(".\\points.sqlite")
@@ -119,20 +119,20 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
         if 'pizza time' in ctx.content.lower():
             pizzaCoolDown = time.time() - self.pizzaLastTime
-            if pizzaCoolDown > 10:
+            if pizzaCoolDown > 120:
                 await ctx.channel.send("Pizza Time is not a meme!")
                 self.pizzaLastTime = time.time()
 
         if 'MrDestructoid' in ctx.content:
             botCoolDown = time.time() - self.botLastTime
-            if botCoolDown > 10:
+            if botCoolDown > 120:
                 await ctx.channel.send("MrDestructoid 01000010 01010010 01001111 01010100"
                                        " 01001000 01000101 01010010 MrDestructoid ")
                 self.botLastTime = time.time()
 
         if 'rooBot' in ctx.content:
             botCoolDown = time.time() - self.botLastTime
-            if botCoolDown > 10:
+            if botCoolDown > 120:
                 await ctx.channel.send("MrDestructoid 01000010 01010111 01010101 01010100"
                                        " 01001000 01000101 01010010 MrDestructoid ")
                 self.botLastTime = time.time()
@@ -597,6 +597,10 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     self.raffleObject.update_prize(ctx.channel.name, rafflePrize)
                     await ctx.channel.send("Prize updated to: " + rafflePrize +
                                            ". Get your tickets using the !buytickets command!")
+
+    @commands.command(name='closeraffle')
+    async def closeraffle(self, ctx):
+        self.raffleObject.close_raffle(ctx.channel.name.lower())
 
     async def raffle_timer(self, ctx):
         if self.raffleObject.is_active():
