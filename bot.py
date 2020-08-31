@@ -600,7 +600,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     @commands.command(name='closeraffle')
     async def closeraffle(self, ctx):
-        self.raffleObject.close_raffle(ctx.channel.name.lower())
+        if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name.lower() == "t0rm3n7":
+            self.raffleObject.close_raffle(ctx.channel.name.lower())
 
     async def raffle_timer(self, ctx):
         if self.raffleObject.is_active():
