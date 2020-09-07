@@ -557,7 +557,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
             else:
                 winner = self.raffleObject.draw_winner(ctx.channel.name)
                 if winner:
-                    await ctx.channel.send("Raffle is Closed! " + winner + " has won the raffle!")
+                    await ctx.channel.send("Raffle is Closed! " + winner + " has won the raffle! Please remember to use"
+                                           " !closeraffle to close the raffle if the winner is present!")
                 else:
                     await ctx.channel.send("There were no tickets in the raffle. Nobody wins... :(")
 
@@ -602,6 +603,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
     async def closeraffle(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name.lower() == "t0rm3n7":
             self.raffleObject.close_raffle(ctx.channel.name.lower())
+            await ctx.channel.send("Winner has claimed their prize! Raffle is officially closed!")
 
     async def raffle_timer(self, ctx):
         if self.raffleObject.is_active():
