@@ -15,6 +15,7 @@ class Raffle:
         print("init")
 
     def open_raffle(self, channelName, rafflePrize):
+        self.close_raffle(channelName)
         self.prize = rafflePrize
         pointsConnection = sqlite3.connect(".\\points.sqlite")
         select_raffle = "SELECT * from Raffle where channel = '" + channelName + "'"
@@ -62,6 +63,9 @@ class Raffle:
         else:
             winningTicket = random.randrange(0, len(self.ticketList))
             winner = self.ticketList[winningTicket]
+            self.active = False
+            self.prize = ""
+            self.remove_tickets(winner)
             return winner
 
     def is_active(self):
@@ -99,6 +103,11 @@ class Raffle:
 
     def get_total_tickets(self):
         return len(self.ticketList)
+
+    def remove_tickets(self, username):
+        for ticket in self.ticketList:
+            if ticket == username:
+                self.ticketList.remove(username)
 
     def create_connection(self, path):
         connection = None
