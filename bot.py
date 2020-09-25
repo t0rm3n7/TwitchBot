@@ -441,17 +441,18 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     else:
                         viewerName = ctx.author.name
                         channelName = ctx.channel.name
-                        currentTickets = self.raffleObject.list_tickets(viewerName)
-                        maxTickets = 100 - currentTickets
-                        if currentTickets == 100:
+                        currentTickets = self.raffleObject.list_tickets(viewerName)  # lists number of tickets in raffle
+                        maxTickets = 100 - currentTickets  # set max number of tickets available for purchase out of 100
+                        estimatedTicketTotal = numTickets + currentTickets
+                        if currentTickets >= 100:
                             await ctx.channel.send(viewerName + ", you already have the max number of tickets per "
                                                    "raffle! You can only have up to 100 tickets in the raffle.")
                         else:
-                            if numTickets > 100:
+                            if numTickets > 100 or estimatedTicketTotal > 100:
                                 overHundred = True
-                                numTickets = maxTickets
+                                numTickets = maxTickets  # set number of tickets to purchase to the maximum allowed
                             cost = int(self.raffleTicketCost) * int(numTickets)
-                            # print(cost)
+                            print(cost)
                             pointsConnection = self.create_connection(".\\points.sqlite")
                             select_points = "SELECT id, points from PointsTracking where name = ?"
                             viewers = self.execute_pointsDB_read_query(pointsConnection, select_points, (viewerName,))
