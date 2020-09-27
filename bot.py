@@ -159,20 +159,22 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     @commands.command(name='time')
     async def time(self, ctx):
-        timeList = ["femtosecond", "second", "minute", "hour", "day", "week", "month", "year", "decade"]
+        timeCooldown = time.time() - self.timeLastTime
+        if timeCooldown > 120:
+            timeList = ["femtosecond", "second", "minute", "hour", "day", "week", "month", "year", "decade"]
 
-        num1 = random.randrange(1, 200, 1)
-        if num1 > 1:
-            unit1 = str(random.choice(timeList) + "s")
-        else:
-            unit1 = str(random.choice(timeList))
-        num2 = random.randrange(1, 200, 1)
-        if num2 > 1:
-            unit2 = str(random.choice(timeList) + "s")
-        else:
-            unit2 = str(random.choice(timeList))
+            num1 = random.randrange(1, 200, 1)
+            if num1 > 1:
+                unit1 = str(random.choice(timeList) + "s")
+            else:
+                unit1 = str(random.choice(timeList))
+            num2 = random.randrange(1, 200, 1)
+            if num2 > 1:
+                unit2 = str(random.choice(timeList) + "s")
+            else:
+                unit2 = str(random.choice(timeList))
 
-        await ctx.channel.send(str(num1) + " " + unit1 + "? That's almost " + str(num2) + " " + unit2 + "!")
+            await ctx.channel.send(str(num1) + " " + unit1 + "? That's almost " + str(num2) + " " + unit2 + "!")
 
     # POINTS section ====================================================================================
 
@@ -683,6 +685,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
     botStarted = 0
     pizzaLastTime = 0
     botLastTime = 0
+    timeLastTime = 0
     raffleObject = Raffle()
     pointsPerMinute = 10
     raffleTicketCost = 500
