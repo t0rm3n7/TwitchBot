@@ -175,6 +175,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 unit2 = str(random.choice(timeList))
 
             await ctx.channel.send(str(num1) + " " + unit1 + "? That's almost " + str(num2) + " " + unit2 + "!")
+            self.timeLastTime = time.time()
 
     # POINTS section ====================================================================================
 
