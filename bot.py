@@ -179,13 +179,79 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     # QUOTE section =====================================================================================
 
-    @commands.command(name="quote")
+    @commands.command(name='quote')
     async def quote(self, ctx):
         quoteCooldown = time.time() - self.quoteLastTime
         if quoteCooldown > 120:
-            if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
-                await ctx.channel.send("quote goes here")
-                self.quoteLastTime = time.time()
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 1:
+                pointsConnection = self.create_connection(".\\points.sqlite")
+                selectQuote = "SELECT id, quote FROM PointsTracking where channelName = ? ORDER BY RANDOM() LIMIT 1;"
+                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (ctx.channel.name,))
+                if quoteLookup:
+                    quoteID = int(quoteLookup[0][0])
+                    quote = quoteLookup[0][1]
+                    await ctx.channel.send("#" + str(quoteID) + ": \"" + quote + "\" - Gilder, 2017")
+                else:
+                    await ctx.channel.send("For some reason, I couldn't lookup a random quote. Please let a mod know.")
+            else:
+                quoteList = re.split(" ", ctx.content, 1)
+                quoteId = quoteList[1]
+                if quoteId.isnumeric():
+                    pointsConnection = self.create_connection(".\\points.sqlite")
+                    selectQuote = "SELECT quote from Quotes where id = ? and channelName = ?"
+                    quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote,
+                                                                   (quoteId, ctx.channel.name, ))
+                    if quoteLookup:
+                        quote = quoteLookup[0][0]
+                        await ctx.channel.send(" \"" + quote + "\" - Gilder, 2017")
+                    else:
+                        await ctx.channel.send(ctx.author.name + ", there was no quote with that ID.")
+                else:
+                    await ctx.channel.send("Example command usage: '!quote' to get a random quote. '!quote 25' to get"
+                                           " quote #25")
+            self.quoteLastTime = time.time()
+
+    @commands.command(name='addquote')
+    async def addquote(self, ctx):
+        if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 1:
+                await ctx.channel.send("Example command usage: '!addquote <quote>' to add a quote to the bot!")
+            else:
+                quoteList = re.split(" ", ctx.content, 1)
+                quote = quoteList[1]
+                pointsConnection = self.create_connection(".\\points.sqlite")
+                insertQuote = "INSERT into Quotes (channelName, quote) VALUES (?, ?)"
+                self.execute_pointsDB_write_query(pointsConnection, insertQuote, (ctx.channel.name, quote))
+                selectQuote = "SELECT id from Quotes where quote = ?"
+                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (quote,))
+                if quoteLookup:
+                    quoteID = quoteLookup[0][0]
+                    await ctx.channel.send(ctx.author.name + ", the quote was added as quote #" + quoteID)
+                else:
+                    await ctx.channel.send(ctx.author.name + ", something went wrong with the ID lookup. "
+                                                             "Please let t0rm3n7 know!")
+
+    @commands.command(name='deletequote')
+    async def deletequote(self, ctx):
+        if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 1:
+                await ctx.channel.send("Example command usage: '!deletequote 25' to remove quote #25.")
+            else:
+                quoteList = re.split(" ", ctx.content, 1)
+                quoteID = quoteList[1]
+                pointsConnection = self.create_connection(".\\points.sqlite")
+                deleteQuote = "DELETE from Quotes where id = ?"
+                self.execute_pointsDB_write_query(pointsConnection, deleteQuote, (quoteID,))
+                selectQuote = "SELECT * from Quotes where id = ?"
+                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (quoteID,))
+                if quoteLookup:
+                    await ctx.channel.send(ctx.author.name + ", the quote was unable to be deleted. Please let "
+                                           "t0rm3n7 know.")
+                else:
+                    await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was deleted successfully!")
 
     # POINTS section ====================================================================================
 
@@ -194,7 +260,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) != 1:
-                await ctx.channel.send("Example command usage: '!bonusall 5000' to give everyone 5000 grtOne ")
+                await ctx.channel.send("Example command usage: '!bonusall 5000' to give everyone 5000 grtOne !")
             else:
                 bonusList = re.split(" ", ctx.content)
                 self.list_chatters(points=int(bonusList[1]))
