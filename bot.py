@@ -177,6 +177,16 @@ class Bot(commands.Bot, ABC):  # set up the bot
             await ctx.channel.send(str(num1) + " " + unit1 + "? That's almost " + str(num2) + " " + unit2 + "!")
             self.timeLastTime = time.time()
 
+    # QUOTE section =====================================================================================
+
+    @commands.command(name="quote")
+    async def quote(self, ctx):
+        quoteCooldown = time.time() - self.quoteLastTime
+        if quoteCooldown > 120:
+            if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+                await ctx.channel.send("quote goes here")
+                self.quoteLastTime = time.time()
+
     # POINTS section ====================================================================================
 
     @commands.command(name='bonusall')  # !bonus 5000
@@ -687,6 +697,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
     pizzaLastTime = 0
     botLastTime = 0
     timeLastTime = 0
+    quoteLastTime = 0
     raffleObject = Raffle()
     pointsPerMinute = 10
     raffleTicketCost = 500
