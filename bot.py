@@ -186,31 +186,32 @@ class Bot(commands.Bot, ABC):  # set up the bot
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
                 pointsConnection = self.create_connection(".\\points.sqlite")
-                selectQuote = "SELECT id, quote FROM PointsTracking where channelName = ? ORDER BY RANDOM() LIMIT 1;"
+                selectQuote = "SELECT id, quote FROM Quotes where channelName = ? ORDER BY RANDOM() LIMIT 1;"
                 quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (ctx.channel.name,))
                 if quoteLookup:
                     quoteID = int(quoteLookup[0][0])
                     quote = quoteLookup[0][1]
                     await ctx.channel.send("#" + str(quoteID) + ": \"" + quote + "\" - Gilder, 2017")
+                    self.quoteLastTime = time.time()
                 else:
                     await ctx.channel.send("For some reason, I couldn't lookup a random quote. Please let a mod know.")
             else:
                 quoteList = re.split(" ", ctx.content, 1)
-                quoteId = quoteList[1]
-                if quoteId.isnumeric():
+                quoteID = quoteList[1]
+                if quoteID.isnumeric():
                     pointsConnection = self.create_connection(".\\points.sqlite")
                     selectQuote = "SELECT quote from Quotes where id = ? and channelName = ?"
                     quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote,
-                                                                   (quoteId, ctx.channel.name, ))
+                                                                   (quoteID, ctx.channel.name, ))
                     if quoteLookup:
                         quote = quoteLookup[0][0]
-                        await ctx.channel.send(" \"" + quote + "\" - Gilder, 2017")
+                        await ctx.channel.send("#" + str(quoteID) + ": \"" + quote + "\" - Gilder, 2017")
+                        self.quoteLastTime = time.time()
                     else:
                         await ctx.channel.send(ctx.author.name + ", there was no quote with that ID.")
                 else:
                     await ctx.channel.send("Example command usage: '!quote' to get a random quote. '!quote 25' to get"
                                            " quote #25")
-            self.quoteLastTime = time.time()
 
     @commands.command(name='addquote')
     async def addquote(self, ctx):
@@ -228,7 +229,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (quote,))
                 if quoteLookup:
                     quoteID = quoteLookup[0][0]
-                    await ctx.channel.send(ctx.author.name + ", the quote was added as quote #" + quoteID)
+                    await ctx.channel.send(ctx.author.name + ", the quote was added as quote #" + str(quoteID))
                 else:
                     await ctx.channel.send(ctx.author.name + ", something went wrong with the ID lookup. "
                                                              "Please let t0rm3n7 know!")
