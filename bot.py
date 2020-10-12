@@ -46,8 +46,16 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                     "channel-bits-events-v2.40208771",
                                     "channel-points-channel-v1.40208771")"""
         if self.botStarted == 0:
+            # runs on Bot startup, but will only be reset if the bot actually goes down.
+            # prevents the points accumulation from running multiple times if the bot gets disconnected from chat
+            # add any loop-based timer starts here
             self.loop.call_later(30, self.list_chatters)  # used to get list of current viewers in chat, every minute
+            self.loop.call_later(86400, self.reauthorize)  # should reauthorize the oauth token to prevent expiration
             self.botStarted = 1
+
+    def reauthorize(self):
+        LiveCheck.reauthorize()
+        self.loop.call_later(86400, self.reauthorize)
 
     def list_chatters(self, points=0):
         isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
@@ -182,7 +190,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
     @commands.command(name='quote')
     async def quote(self, ctx):
         quoteCooldown = time.time() - self.quoteLastTime
-        if quoteCooldown > 120:
+        if quoteCooldown > 60:
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
                 pointsConnection = self.create_connection(".\\points.sqlite")

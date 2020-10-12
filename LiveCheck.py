@@ -23,8 +23,8 @@ def get_access_token():
     # print(uri)
 
     authorization_response = \
-        'http://localhost:28888/#access_token=ycmn84cqn8c33iuoo9t2u5w012crh6&scope=&' \
-        'state=c54Iv7uDOrQjoMcXbYaWMDLtHG0LaB&token_type=bearer'
+        'http://localhost:28888#access_token=gbqyb5lur1tryh68bu0w3ce6us0g27&' \
+        'scope=&state=KOyYAmj9aYzbn2qVu1XW3M7kSzXZHx&token_type=bearer'
     token = client.fetch_token(authorization_response=authorization_response)
     return token
 
@@ -32,6 +32,7 @@ def get_access_token():
 def liveCheck(chan_name):
     try:
         tokenInfo = get_access_token()
+        # print(tokenInfo)
         authorization = "Bearer " + tokenInfo['access_token']
         url = f"https://api.twitch.tv/helix/streams?user_login={chan_name}"
         heading = {
@@ -40,6 +41,10 @@ def liveCheck(chan_name):
         }
         req = urllib.request.Request(url, headers=heading)
         response = urllib.request.urlopen(req)
+        # print(response)
+        # print(response.info())
+        if response.getcode() != 200:
+            print(response.getcode())
         output = json.loads(response.read())
         output = output["data"]
         for i in output:
@@ -52,5 +57,22 @@ def liveCheck(chan_name):
         print('gettwitchapi', e)
         return e
 
+
+def reauthorize():
+    tokenInfo = get_access_token()
+    url = "https://id.twitch.tv/oauth2/validate"
+    authorization = "OAuth " + tokenInfo['access_token']
+    heading = {
+        "Client-ID": "301fbt6wgu2wzn7f6s3js7t7nyaze1",
+        "Authorization": authorization
+    }
+    req = urllib.request.Request(url, headers=heading)
+    response = urllib.request.urlopen(req)
+    # print(response)
+    print(response.info())
+    if response.getcode() != 200:
+        print(response.getcode())
+    else:
+        print("Validation Successful")
 
 # liveCheck("TheGreatGildersneeze")
