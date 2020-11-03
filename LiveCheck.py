@@ -36,7 +36,7 @@ def liveCheck(chan_name):
         authorization = "Bearer " + tokenInfo['access_token']
         url = f"https://api.twitch.tv/helix/streams?user_login={chan_name}"
         heading = {
-            "Client-ID": "301fbt6wgu2wzn7f6s3js7t7nyaze1",
+            "Client-ID": os.environ['CLIENT_ID'],
             "Authorization": authorization
         }
         req = urllib.request.Request(url, headers=heading)
@@ -63,7 +63,7 @@ def reauthorize():
     url = "https://id.twitch.tv/oauth2/validate"
     authorization = "OAuth " + tokenInfo['access_token']
     heading = {
-        "Client-ID": "301fbt6wgu2wzn7f6s3js7t7nyaze1",
+        "Client-ID": os.environ['CLIENT_ID'],
         "Authorization": authorization
     }
     req = urllib.request.Request(url, headers=heading)
