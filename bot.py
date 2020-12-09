@@ -44,6 +44,18 @@ class Bot(commands.Bot, ABC):  # set up the bot
             initial_channels=[os.environ['CHANNEL']]
         )
 
+    async def OAuthListener(self, reader, writer):
+        response = await reader.readuntil(b'\n')
+        responseList = re.split(r"\\r\\n", response.decode())
+        responseHeader = responseList[0]
+        code = re.search(r"\w{10,}", responseHeader)
+        if code:
+            print(code.group())
+        response = b"HTTP/1.1 200 OK"
+        writer.write(response)
+        await writer.drain()
+        writer.close()
+
     async def event_ready(self):
         """Called once when the bot goes online."""
         print(f"{os.environ['BOT_NICK']} is online!")
@@ -59,6 +71,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
             # add any loop-based timer starts here
             self.loop.call_later(30, self.list_chatters)  # used to get list of current viewers in chat, every minute
             self.loop.call_later(86400, self.reauthorize)  # should reauthorize the oauth token to prevent expiration
+            await asyncio.start_server(
+                self.OAuthListener, host="localhost", port=28888, start_serving=True)
             self.botStarted = 1
 
     def reauthorize(self):
@@ -181,38 +195,66 @@ class Bot(commands.Bot, ABC):  # set up the bot
     @commands.command(name='time')
     async def time(self, ctx):
         timeCooldown = time.time() - self.timeLastTime
-        if timeCooldown > 120:
-            num1 = random.randrange(1, 200, 1)
-            if num1 > 1:
-                unit1 = str(random.choice(timeList))
-                if unit1 == "century":
-                    unit1 = "centuries"
-                elif unit1 == "millenium":
-                    unit1 = "millenia"
+        if timeCooldown > 45:
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 1:
+                num1 = random.randrange(1, 200, 1)
+                if num1 > 1:
+                    unit1 = str(random.choice(timeList))
+                    if unit1 == "century":
+                        unit1 = "centuries"
+                    elif unit1 == "millenium":
+                        unit1 = "millenia"
+                    else:
+                        unit1 = unit1 + "s"
                 else:
-                    unit1 = unit1 + "s"
-            else:
-                unit1 = str(random.choice(timeList))
-            num2 = random.randrange(1, 200, 1)
-            if num2 > 1:
-                unit2 = str(random.choice(timeList))
-                if unit2 == "century":
-                    unit2 = "centuries"
-                elif unit2 == "millenium":
-                    unit2 = "millenia"
+                    unit1 = str(random.choice(timeList))
+                num2 = random.randrange(1, 200, 1)
+                if num2 > 1:
+                    unit2 = str(random.choice(timeList))
+                    if unit2 == "century":
+                        unit2 = "centuries"
+                    elif unit2 == "millenium":
+                        unit2 = "millenia"
+                    else:
+                        unit2 = unit2 + "s"
                 else:
-                    unit2 = unit2 + "s"
-            else:
-                unit2 = str(random.choice(timeList))
+                    unit2 = str(random.choice(timeList))
 
-            await ctx.channel.send(str(num1) + " " + unit1 + "? That's almost " + str(num2) + " " + unit2 + "!")
+                await ctx.channel.send(str(num1) + " " + unit1 + "? That's almost " + str(num2) + " " + unit2 + "!")
+            else:
+                commandList = re.split(" ", ctx.content, 2)
+                timeValue = commandList[1]
+                if timeValue.isnumeric():
+                    timeUnits = commandList[2]
+                    num2 = random.randrange(1, 200, 1)
+                    if num2 > 1:
+                        unit2 = str(random.choice(timeList))
+                        if unit2 == "century":
+                            unit2 = "centuries"
+                        elif unit2 == "millenium":
+                            unit2 = "millenia"
+                        else:
+                            unit2 = unit2 + "s"
+                    else:
+                        unit2 = str(random.choice(timeList))
+
+                    await ctx.channel.send(
+                        timeValue + " " + timeUnits + "? That's almost " + str(num2) + " " + unit2 + "!")
+                else:
+                    await ctx.channel.send(
+                        "To use !time beyond the basic call, use the following format: !time <number> <units> "
+                        "Ex: !time 5 months to get a result like 5 months? That's almost 337 millenia!")
             self.timeLastTime = time.time()
 
     @commands.command(name='negacassie')
     async def negacassie(self, ctx):
         await ctx.channel.send(
-            "Ì̴̧̧̘͚̠͑͐̇̓̋t̴̨͈̳̝͇͐͗̍̚͞ m̧̨̜͙̳̻̣̫͈̋͊̿̄̚͠͡ḁ̴̡̡̲̻͇̈͛̃̔̚͜k̶̨̘̼̝̺̽̎̃̓͊̒͑͘̚̚e̛͈͉͚͈̳̯̻̥̿̍̔̿̃̀͑͟͡͡s̴̰͔͔͎̼͉̫͕̗̿͆̐̉̐͒̏͌̾ y̵̧͈̯̻̠̔͆͗̾̽̾̇̿͝o̢̜̞̹̪̽͌͌͑̂̏̒͢ư̷̢̱͖̮̔͊̚̕͟͜͠ "
-            "N̷̥̺͕̘̦̞̼̰̗͗̓͌̅̅̓̕͟͠͡ỏ̵͉͕̹̭̆̀̇́͝͞ͅt̷̡̧̛̟͔̣̥̪̩͉̻́͗̿͝͞͝ḫ̤̞̮̂́̔̊͟͠i̵͉̻̭͍̾́͛̉͆̉͐̃̍͜ǹ͙͇̠̞͈̭̳̆͐͛̎̓͒̚͜͠͠ͅg̵̰͇̠̗͔̅͋̔̐̂͢")
+            "Ì̴̧̧̘͚̠͑͐̇̓̋t̴̨͈̳̝͇͐͗̍̚͞ "
+            "m̧̨̜͙̳̻̣̫͈̋͊̿̄̚͠͡ḁ̴̡̡̲̻͇̈͛̃̔̚͜k̶̨̘̼̝̺̽̎̃̓͊̒͑͘̚̚e̛͈͉͚͈̳̯̻̥̿̍̔̿̃̀͑͟͡͡s"
+            "̴̰͔͔͎̼͉̫͕̗̿͆̐̉̐͒̏͌̾ y̵̧͈̯̻̠̔͆͗̾̽̾̇̿͝o̢̜̞̹̪̽͌͌͑̂̏̒͢ư̷̢̱͖̮̔͊̚̕͟͜͠ "
+            "N̷̥̺͕̘̦̞̼̰̗͗̓͌̅̅̓̕͟͠͡ỏ̵͉͕̹̭̆̀̇́͝͞ͅt̷̡̧̛̟͔̣̥̪̩͉̻́͗̿͝͞͝ḫ̤̞̂́̔̊͟͠"
+            "̮i̵͉̻̭͍̾́͛̉͆̉͐̃̍͜ǹ͙͇̠̞͈̭̳̆͐͛̎̓͒̚͜͠͠ͅg̵̰͇̠̗͔̅͋̔̐̂͢")
 
     @commands.command(name='king')
     async def king(self, ctx):
@@ -557,6 +599,18 @@ class Bot(commands.Bot, ABC):  # set up the bot
         else:
             await ctx.channel.send("There is no active bit war at this time.")
 
+    # NOOT v DOOT section ===============================================================================
+    @commands.command(name='noot')
+    async def noot(self, ctx):
+        print("noot!")
+
+    @commands.command(name='doot')
+    async def doot(self, ctx):
+        print("doot!")
+
+    async def enableNootDoot(self, ctx):
+        print()
+
     # QUOTE section =====================================================================================
 
     @commands.command(name='quote')
@@ -633,6 +687,30 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                            "t0rm3n7 know.")
                 else:
                     await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was deleted successfully!")
+
+    @commands.command(name='editquote')
+    async def editquote(self, ctx):
+        if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 2:
+                await ctx.channel.send("Example command usage: '!editquote 13 B i G S H R i M P i N' to change quote "
+                                       "#13 to 'B i G S H R i M P i N'.")
+            else:
+                quoteList = re.split(" ", ctx.content, 2)
+                quoteID = quoteList[1]
+                newQuote = quoteList[2]
+                pointsConnection = self.create_connection(".\\points.sqlite")
+                deleteQuote = "UPDATE Quotes " \
+                              "SET quote = ? " \
+                              "WHERE id = ?"
+                self.execute_pointsDB_write_query(pointsConnection, deleteQuote, (newQuote, quoteID,))
+                selectQuote = "SELECT * from Quotes where id = ?"
+                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (quoteID,))
+                if quoteLookup[2] == newQuote:
+                    await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was updated successfully!")
+                else:
+                    await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was unable to be updated, "
+                                           "please let t0rm3n7 know!")
 
     # POINTS section ====================================================================================
 
@@ -1035,8 +1113,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
             else:
                 winner = self.raffleObject.draw_winner(ctx.channel.name)
                 if winner:
-                    await ctx.channel.send("Raffle is Closed! " + winner + " has won the raffle! Please remember to use"
-                                           " !closeraffle to close the raffle if the winner is present!")
+                    await ctx.channel.send("Raffle is Closed!")
+                    await ctx.channel.send(str(winner) + " has won the raffle!")
                 else:
                     await ctx.channel.send("There were no tickets in the raffle. Nobody wins... :(")
 

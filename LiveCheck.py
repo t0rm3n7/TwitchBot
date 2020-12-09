@@ -1,6 +1,6 @@
 import urllib.request
 import urllib.error
-import requests
+import asyncio
 import json
 import os
 from authlib.integrations.requests_client import OAuth2Session

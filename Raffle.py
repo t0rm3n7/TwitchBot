@@ -12,7 +12,7 @@ class Raffle:
     prize = ""
 
     def __init__(self):
-        print("init")
+        print("raffle init")
 
     def open_raffle(self, channelName, rafflePrize):
         self.close_raffle(channelName)
