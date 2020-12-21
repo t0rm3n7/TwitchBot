@@ -75,6 +75,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
             await asyncio.start_server(
                 self.OAuthListener, host="localhost", port=28888, start_serving=True)
             self.NVD.autoActivate(os.environ['CHANNEL'])
+            if self.NVD.active:
+                self.loop.call_later(600, self.NvDTimer)
             self.botStarted = 1
 
     def reauthorize(self):
@@ -842,6 +844,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
         self.NVD.enableNootVsDoot(channelName)
         await ctx.channel.send("Noot vs Doot is live! The War for Christmas has begun!")
         await self.NvDTeamsReminder(ctx)
+        self.loop.call_later(600, self.NvDTimer)
 
     async def disableNootDoot(self, ctx):
         channelName = ctx.channel.name.lower()
@@ -892,6 +895,28 @@ class Bot(commands.Bot, ABC):  # set up the bot
         else:
             await ctx.channel.send(
                 "Current standings: Team Noot with " + nootTotal + " points. Team Doot with " + dootTotal + " points.")
+
+    async def NvDTimer(self):
+        isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
+        if isLive:
+            if self.NVD.active:
+                ws = self._ws
+                channelName = os.environ['CHANNEL'][0]
+                thirdTeam = self.NVD.isThird(channelName.lower())
+                if thirdTeam[0]:
+                    thirdName = thirdTeam[0].capitalize()
+                    message = str(
+                        "Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
+                        "War for Christmas! Join Team Noot or Team Doot help decide the victor. In addition,"
+                        " we have Team " + thirdName + " rolling in to lay claim to Christmas! "
+                        "Use !nvdstats to check on the current standings for the teams.")
+                else:
+                    message = str(
+                        "Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
+                        "War for Christmas! Join Team Noot or Team Doot help decide the victor. "
+                        "Use !nvdstats to check on the current standings for the teams.")
+                await ws.send_privmsg(channelName, message)
+        self.loop.call_later(600, self.NvDTimer)
 
     # QUOTE section ====================================================================================================
 

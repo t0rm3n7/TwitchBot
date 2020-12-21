@@ -69,7 +69,7 @@ class NootVsDoot:
                 self.teamTotals = [activeDB[0][3], activeDB[0][4], activeDB[0][5]]
                 self.teams[2] = activeDB[0][6]
                 self.teamValues[2] = activeDB[0][7]
-                print("Noot vs Doot is still active, loading values! " + self.teams[2] + " " + str(self.teamValues[2]))
+                print("Noot vs Doot is still active, loading values!")
             else:
                 # is not currently active so clear out values in the DB and activate
                 updateNVD = "UPDATE NootVsDootMain " \
