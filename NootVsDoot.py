@@ -213,6 +213,8 @@ class NootVsDoot:
                     self.execute_write_query(self.dbConnection, updateNVDViewers,
                                              (currentTeam, newValues[0], newValues[1], newValues[2],
                                               newCaptainPoints, channelName, viewerName))
+                    return "Added " + str(valueToBeAdded) + " points to " \
+                           "Team " + teamName.capitalize() + " for " + viewerName
                 else:
                     currentTeam = teamName
                     currentValues = [0, 0, 0]  # set team values to 0 for new row
@@ -226,10 +228,12 @@ class NootVsDoot:
                     self.execute_write_query(self.dbConnection, insertNVDViewers,
                                              (channelName, viewerName, currentTeam,
                                               newValues[0], newValues[1], newValues[2], newCaptainPoints))
+                    return "Added " + str(valueToBeAdded) + " points to " \
+                           "Team " + teamName.capitalize() + " for " + viewerName
             else:
-                print("Couldn't find NootVsDoot entry for " + channelName)
+                return "Couldn't find NootVsDoot entry for " + channelName
         else:
-            print(teamName + " is an invalid Team Name.")
+            return teamName + " is an invalid Team Name."
 
     def removeDonation(self, channelName, teamName, viewerName, donation=0):
         # remove a donation from teamName, donation is broken down into noots/doots if present
@@ -277,13 +281,15 @@ class NootVsDoot:
                     self.execute_write_query(self.dbConnection, updateNVDViewers,
                                              (currentTeam, newValues[0], newValues[1], newValues[2],
                                               channelName, viewerName))
+                    return "Removed " + str(valueToBeAdded) + " points from " \
+                           "Team " + teamName.capitalize() + " for " + viewerName
                 else:
-                    print("Can't remove " + str(donation) + " donation from " + viewerName + "'s tracking, as they "
-                          "aren't in the DB. overall totals are adjusted. Please add the viewer manually.")
+                    return "Can't remove " + str(donation) + " donation from " + viewerName + "'s tracking, as they " \
+                          "aren't in the DB. overall totals are adjusted. Please add the viewer manually."
             else:
-                print("Couldn't find NootVsDoot entry for " + channelName)
+                return "Couldn't find NootVsDoot entry for " + channelName
         else:
-            print(teamName + " is an invalid Team Name.")
+            return teamName + " is an invalid Team Name."
 
     def forceTeamChange(self, channelName, viewerName, teamName):
         # change viewerName's team affiliation to teamName

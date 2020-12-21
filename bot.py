@@ -76,7 +76,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 self.OAuthListener, host="localhost", port=28888, start_serving=True)
             self.NVD.autoActivate(os.environ['CHANNEL'])
             if self.NVD.active:
-                self.loop.call_later(600, self.NvDTimer)
+                self.loop.call_later(600, asyncio.create_task, self.NvDTimer)
             self.botStarted = 1
 
     def reauthorize(self):
@@ -691,7 +691,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     await ctx.channel.send("If a bot crash were to occur, on startup, the bot will check if "
                                            "Noot vs Doot was active last session.")
         elif ctx.author.is_mod:
-            #mods cannot start or stop Noot vs Doot, but they have all the other commands listed
+            # mods cannot start or stop Noot vs Doot, but they have all the other commands listed
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
                 if self.NVD.active:
@@ -730,9 +730,9 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     statsList = self.NVD.viewerStatsLookup(channelName, viewerName)
                     if statsList:
                         currentTeam = statsList[0][3].capitalize()
-                        currentNoots = statsList[0][4]
-                        currentDoots = statsList[0][5]
-                        currentThird = statsList[0][6]
+                        currentNoots = str(statsList[0][4])
+                        currentDoots = str(statsList[0][5])
+                        currentThird = str(statsList[0][6])
                         if self.NVD.teams[2]:
                             # third team
                             thirdName = self.NVD.teams[2]
@@ -768,7 +768,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         "This will accept negative values to remove points.")
                 else:
                     captainList = re.split(" ", ctx.content, 3)
-                    if not captainList[2].isnumeric():
+                    if not captainList[2].isnumeric() and not re.match(r"-\d+", captainList[2]):
                         await ctx.channel.send(
                             "Example usage: '!nvdcaptainpoints t0rm3n7 5' to add 5 captain points for t0rm3n7. "
                             "This will accept negative values to remove points.")
@@ -812,20 +812,27 @@ class Bot(commands.Bot, ABC):  # set up the bot
             if teamName == "third":
                 teamName = self.NVD.teams[2]
             self.NVD.forceAddRemove(channelName, teamName, 1)
+            await ctx.channel.send("Adding one point for Team " + teamName.capitalize())
         elif len(numSpaces) < 2:
             # add/remove multiple points via force adding or listing help topic
             nootList = re.split(" ", ctx.content, 2)
             if nootList[1] == "help":
                 await ctx.channel.send(ctx.author.name + " Example usage: '!" + teamName + "' to add one point for that"
                                        " team. '!" + teamName + " 4' to add four points for that team. "
-                                       "If needing to add a donation amount from a viewer, use '!" + teamName + " "
-                                       "1225 t0rm3n7' to add the bit value and let the bot handle the math! "
+                                       "If needing to add a bit amount from a viewer, use '!" + teamName + " "
+                                       "1225 t0rm3n7' to add the bit value and let the bot handle the math! Just "
+                                       "remember to make the value in the bit format instead of a flat dollar amount."
                                        "If you make the value negative for any of the numerical commands, "
                                        "then the value would be removed from the totals.")
-            elif nootList[1].isnumeric():
+            elif nootList[1].isnumeric() or re.match(r"-\d+", nootList[1]):
                 if teamName == "third":
                     teamName = self.NVD.teams[2]
                 self.NVD.forceAddRemove(channelName, teamName, int(nootList[1]))
+                if int(nootList[1]) < 0:
+                    await ctx.channel.send(
+                        "Removing " + str(abs(int(nootList[1]))) + " point(s) for Team " + teamName.capitalize())
+                else:
+                    await ctx.channel.send("Adding " + nootList[1] + " point(s) for Team " + teamName.capitalize())
         elif len(numSpaces) < 3:
             # add/remove multiple points for a viewer via bit amount
             nootList = re.split(" ", ctx.content, 3)
@@ -835,16 +842,18 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 teamName = self.NVD.teams[2]
             if donation < 0:
                 absDonation = abs(donation)
-                self.NVD.removeDonation(channelName, teamName, viewerName, absDonation)
+                status = self.NVD.removeDonation(channelName, teamName, viewerName, absDonation)
+                await ctx.channel.send(status)
             else:
-                self.NVD.addDonation(channelName, teamName, viewerName, donation)
+                status = self.NVD.addDonation(channelName, teamName, viewerName, donation)
+                await ctx.channel.send(status)
 
     async def enableNootDoot(self, ctx):
         channelName = ctx.channel.name.lower()
         self.NVD.enableNootVsDoot(channelName)
         await ctx.channel.send("Noot vs Doot is live! The War for Christmas has begun!")
         await self.NvDTeamsReminder(ctx)
-        self.loop.call_later(600, self.NvDTimer)
+        self.loop.call_later(600, asyncio.create_task, self.NvDTimer)
 
     async def disableNootDoot(self, ctx):
         channelName = ctx.channel.name.lower()
@@ -887,19 +896,21 @@ class Bot(commands.Bot, ABC):  # set up the bot
         nootTotal = NVDList[0][3]
         dootTotal = NVDList[0][4]
         thirdTotal = NVDList[0][5]
-        thirdName = NVDList[0][6].capitalize()
+        thirdName = NVDList[0][6]
         if thirdName:
+            thirdName = NVDList[0][6].capitalize()
             await ctx.channel.send(
-                "Current standings: Team Noot with " + nootTotal + " points. Team Doot with " + dootTotal + " points. "
-                "Team " + thirdName + " with " + thirdTotal + " points.")
+                "Current standings: Team Noot with " + str(nootTotal) + " points. Team Doot with " +
+                str(dootTotal) + " points. Team " + thirdName + " with " + str(thirdTotal) + " points.")
         else:
             await ctx.channel.send(
-                "Current standings: Team Noot with " + nootTotal + " points. Team Doot with " + dootTotal + " points.")
+                "Current standings: Team Noot with " + str(nootTotal) + " points. Team Doot with " +
+                str(dootTotal) + " points.")
 
     async def NvDTimer(self):
-        isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
-        if isLive:
-            if self.NVD.active:
+        if self.NVD.active:
+            isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
+            if isLive:
                 ws = self._ws
                 channelName = os.environ['CHANNEL'][0]
                 thirdTeam = self.NVD.isThird(channelName.lower())
@@ -916,7 +927,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         "War for Christmas! Join Team Noot or Team Doot help decide the victor. "
                         "Use !nvdstats to check on the current standings for the teams.")
                 await ws.send_privmsg(channelName, message)
-        self.loop.call_later(600, self.NvDTimer)
+            self.loop.call_later(600, asyncio.create_task, self.NvDTimer)
 
     # QUOTE section ====================================================================================================
 
