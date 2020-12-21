@@ -11,6 +11,7 @@ import functools
 import re
 from Raffle import Raffle
 import pickle
+from NootVsDoot import NootVsDoot
 
 
 timer = 0
@@ -73,9 +74,11 @@ class Bot(commands.Bot, ABC):  # set up the bot
             self.loop.call_later(86400, self.reauthorize)  # should reauthorize the oauth token to prevent expiration
             await asyncio.start_server(
                 self.OAuthListener, host="localhost", port=28888, start_serving=True)
+            self.NVD.autoActivate(os.environ['CHANNEL'])
             self.botStarted = 1
 
     def reauthorize(self):
+        print("attempting to reauthorize")
         LiveCheck.reauthorize()
         self.loop.call_later(86400, self.reauthorize)
 
@@ -268,7 +271,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
         # HonorableJay's tip reward 10/29/2020
         await ctx.channel.send("ACTUAL CANNIBAL SHIA LABEOUF!!")
 
-    # BIT WAR section ===================================================================================
+    # BIT WAR section ==================================================================================================
     @commands.command(name='war')
     async def war(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
@@ -599,19 +602,298 @@ class Bot(commands.Bot, ABC):  # set up the bot
         else:
             await ctx.channel.send("There is no active bit war at this time.")
 
-    # NOOT v DOOT section ===============================================================================
+    # NOOT vs DOOT section =============================================================================================
     @commands.command(name='noot')
     async def noot(self, ctx):
-        print("noot!")
+        # add a noot to the tally, can list viewer and donation amount,
+        # or just listing the number of noots to force add/remove
+        channelName = ctx.channel.name.lower()
+        if ctx.author.name.lower() == channelName or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            if self.NVD.isActive(channelName):
+                await self.NvDAddRemoveTeamPoints(ctx, "noot")
+            else:
+                await ctx.channel.send("Noot vs Doot is currently disabled.")
 
     @commands.command(name='doot')
     async def doot(self, ctx):
-        print("doot!")
+        # add a doot to the tally, can list viewer and donation amount,
+        # or just listing the number of doots to force add/remove
+        channelName = ctx.channel.name.lower()
+        if ctx.author.name.lower() == channelName or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            if self.NVD.isActive(channelName):
+                await self.NvDAddRemoveTeamPoints(ctx, "doot")
+            else:
+                await ctx.channel.send("Noot vs Doot is currently disabled.")
+
+    @commands.command(name='third')
+    async def third(self, ctx):
+        # add a third team point to the tally, can list viewer and donation amount,
+        # or just listing the number of third team points to force add/remove
+        channelName = ctx.channel.name.lower()
+        if ctx.author.name.lower() == channelName or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            if self.NVD.isActive(channelName):
+                await self.NvDAddRemoveTeamPoints(ctx, "third")
+            else:
+                await ctx.channel.send("Noot vs Doot is currently disabled.")
+
+    @commands.command(name='nootvsdoot')
+    async def nootVsDoot(self, ctx):
+        # main command for info and enabling/disabling
+        channelName = ctx.channel.name.lower()
+        if ctx.author.name.lower() == channelName or ctx.author.name == "t0rm3n7":
+            # Gilder and t0rm3n7 (debug-access for t0rm3n7)
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 1:
+                if self.NVD.active:
+                    await self.NvDInfo(ctx)
+                else:
+                    await ctx.channel.send("Noot vs Doot is currently disabled. For more info, use '!nootvsdoot help'.")
+            else:
+                nootList = re.split(" ", ctx.content, 2)
+                if nootList[1] == "start":
+                    if not self.NVD.active:
+                        # NVD is not active
+                        self.NVD.enableNootVsDoot(channelName)
+                    else:
+                        # NVD is active
+                        await ctx.channel.send("Noot vs Doot is already enabled.")
+                elif nootList[1] == "end":
+                    if self.NVD.active:
+                        # NVD is active
+                        self.NVD.disableNootVsDoot(channelName)
+                    else:
+                        # NVD is not active
+                        await ctx.channel.send("Noot vs Doot is already disabled.")
+                elif nootList[1] == "commands":
+                    await ctx.channel.send(
+                        "List of commands related to Noot vs Doot: '!nootvsdoot', '!noot', '!doot', '!third', "
+                        "'!nvdstats', '!nvdcaptainpoints', and '!nvdteamchange'")
+                elif nootList[1] == "third":
+                    if len(numSpaces) < 3:
+                        await ctx.channel.send("Example usage: '!nootvsdoot third 1226 shrook' to set the third team "
+                                               "as Team Shrook with a bit value of 1226 to track points for that team.")
+                    else:
+                        thirdList = re.split(" ", ctx.content, 4)
+                        teamBits = thirdList[2]
+                        teamName = thirdList[3]
+                        status = self.NVD.enableExtraTeam(channelName, teamName, teamBits)
+                        await ctx.channel.send(status)
+                else:
+                    await ctx.channel.send("Example Usage: '!nootvsdoot' to display information about Noot vs Doot. "
+                                           "'!nootvsdoot start' to enable Noot vs Doot and will enable the various "
+                                           "team commands: '!noot', '!doot', and '!third' for adding/removing points. "
+                                           "'!nootvsdoot end' will disable Noot vs Doot and clear the loyalty points "
+                                           "for all viewers as well as the grand totals. '!nootvsdoot third' for help "
+                                           "on how to add the third team to the roster. '!nootvsdoot commands' will "
+                                           "display the current command list for Noot vs Doot.")
+                    await ctx.channel.send("If a bot crash were to occur, on startup, the bot will check if "
+                                           "Noot vs Doot was active last session.")
+        elif ctx.author.is_mod:
+            #mods cannot start or stop Noot vs Doot, but they have all the other commands listed
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 1:
+                if self.NVD.active:
+                    await self.NvDInfo(ctx)
+                else:
+                    await ctx.channel.send("Noot vs Doot is currently disabled. For more info, use '!nootvsdoot help'.")
+            else:
+                nootList = re.split(" ", ctx.content, 2)
+                if nootList[1] == "commands":
+                    await ctx.channel.send(
+                        "List of commands related to Noot vs Doot: '!nootvsdoot', '!noot', '!doot', '!third', "
+                        "'!nvdstats', '!nvdcaptainpoints', and '!nvdteamchange'")
+                else:
+                    await ctx.channel.send("Example Usage: '!nootvsdoot' to display information about Noot vs Doot. "
+                                           "'!nootvsdoot commands' will display the current command list for "
+                                           "Noot vs Doot.")
+                    await ctx.channel.send("If a bot crash were to occur, on startup, the bot will check if "
+                                           "Noot vs Doot was active last session.")
+        else:
+            # normal viewers
+            if self.NVD.active:
+                await self.NvDInfo(ctx)
+
+    @commands.command(name='nvdstats')
+    async def nvdstats(self, ctx):
+        # looks up stats of the teams, or for the author
+        channelName = ctx.channel.name.lower()
+        if self.NVD.isActive(channelName):
+            numSpaces = re.findall(" ", ctx.content)
+            if len(numSpaces) < 1:
+                await self.NvDCurrentStats(ctx)
+            else:
+                ctxList = re.split(" ", ctx.content, 2)
+                if ctxList[1] == "me":
+                    viewerName = ctx.author.name.lower()
+                    statsList = self.NVD.viewerStatsLookup(channelName, viewerName)
+                    if statsList:
+                        currentTeam = statsList[0][3].capitalize()
+                        currentNoots = statsList[0][4]
+                        currentDoots = statsList[0][5]
+                        currentThird = statsList[0][6]
+                        if self.NVD.teams[2]:
+                            # third team
+                            thirdName = self.NVD.teams[2]
+                            await ctx.channel.send(
+                                viewerName + ", you are on Team " + currentTeam + ". Noots: " + currentNoots + ", "
+                                "Doots: " + currentDoots + ", " + thirdName + ": " + currentThird)
+                        else:
+                            # no third team
+                            await ctx.channel.send(
+                                viewerName + ", you are on Team " + currentTeam + ". Noots: " + currentNoots + ", "
+                                "Doots: " + currentDoots)
+                    else:
+                        await ctx.channel.send(
+                            viewerName + ", you have not yet declared your allegiance in the War for Christmas!")
+                        await self.NvDTeamsReminder(ctx)
+                else:
+                    await ctx.channel.send(
+                        "Example usage: '!nvdstats' for overall standings of the teams. "
+                        "'!nvdstats me' to see which team you're allied with, and your standings with the other teams.")
+        else:
+            await ctx.channel.send("Noot vs Doot is not currently running.")
+
+    @commands.command(name='nvdcaptainpoints')
+    async def nvdcaptainpoints(self, ctx):
+        # used to adjust captain points for a specified viewer
+        channelName = ctx.channel.name.lower()
+        if ctx.author.name.lower() == channelName or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            if self.NVD.isActive(channelName):
+                numSpaces = re.findall(" ", ctx.content)
+                if len(numSpaces) < 2:
+                    await ctx.channel.send(
+                        "Example usage: '!nvdcaptainpoints t0rm3n7 5' to add 5 captain points for t0rm3n7. "
+                        "This will accept negative values to remove points.")
+                else:
+                    captainList = re.split(" ", ctx.content, 3)
+                    if not captainList[2].isnumeric():
+                        await ctx.channel.send(
+                            "Example usage: '!nvdcaptainpoints t0rm3n7 5' to add 5 captain points for t0rm3n7. "
+                            "This will accept negative values to remove points.")
+                    else:
+                        viewerName = captainList[1]
+                        points = int(captainList[2])
+                        status = self.NVD.forceCaptainPoints(channelName, viewerName, points)
+                        await ctx.channel.send(status)
+            else:
+                await ctx.channel.send("Noot vs Doot is currently disabled.")
+
+    @commands.command(name='nvdteamchange')
+    async def nvdteamchange(self, ctx):
+        # used to manually change the specified viewer's team
+        channelName = ctx.channel.name.lower()
+        if ctx.author.name.lower() == channelName or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            if self.NVD.isActive(channelName):
+                numSpaces = re.findall(" ", ctx.content)
+                if len(numSpaces) < 2:
+                    await ctx.channel.send(
+                        "Example usage: '!nvdteamchange t0rm3n7 doot' to move t0rm3n7 to Team Doot.")
+                else:
+                    ctxList = re.split(" ", ctx.content, 3)
+                    if ctxList[2].lower() in self.NVD.teams:
+                        # specified team is in the list of recognized teams
+                        viewerName = ctxList[1]
+                        teamName = ctxList[2]
+                        status = self.NVD.forceTeamChange(channelName, viewerName, teamName)
+                        await ctx.channel.send(status)
+                    else:
+                        await ctx.channel.send(
+                            "Example usage: '!nvdteamchange t0rm3n7 noot' to move t0rm3n7 to Team Noot.")
+            else:
+                await ctx.channel.send("Noot vs Doot is currently disabled.")
+
+    async def NvDAddRemoveTeamPoints(self, ctx, teamName):
+        channelName = ctx.channel.name.lower()
+        numSpaces = re.findall(" ", ctx.content)
+        if len(numSpaces) < 1:
+            # add one point via force adding
+            if teamName == "third":
+                teamName = self.NVD.teams[2]
+            self.NVD.forceAddRemove(channelName, teamName, 1)
+        elif len(numSpaces) < 2:
+            # add/remove multiple points via force adding or listing help topic
+            nootList = re.split(" ", ctx.content, 2)
+            if nootList[1] == "help":
+                await ctx.channel.send(ctx.author.name + " Example usage: '!" + teamName + "' to add one point for that"
+                                       " team. '!" + teamName + " 4' to add four points for that team. "
+                                       "If needing to add a donation amount from a viewer, use '!" + teamName + " "
+                                       "1225 t0rm3n7' to add the bit value and let the bot handle the math! "
+                                       "If you make the value negative for any of the numerical commands, "
+                                       "then the value would be removed from the totals.")
+            elif nootList[1].isnumeric():
+                if teamName == "third":
+                    teamName = self.NVD.teams[2]
+                self.NVD.forceAddRemove(channelName, teamName, int(nootList[1]))
+        elif len(numSpaces) < 3:
+            # add/remove multiple points for a viewer via bit amount
+            nootList = re.split(" ", ctx.content, 3)
+            donation = int(nootList[1])
+            viewerName = nootList[2]
+            if teamName == "third":
+                teamName = self.NVD.teams[2]
+            if donation < 0:
+                absDonation = abs(donation)
+                self.NVD.removeDonation(channelName, teamName, viewerName, absDonation)
+            else:
+                self.NVD.addDonation(channelName, teamName, viewerName, donation)
 
     async def enableNootDoot(self, ctx):
-        print()
+        channelName = ctx.channel.name.lower()
+        self.NVD.enableNootVsDoot(channelName)
+        await ctx.channel.send("Noot vs Doot is live! The War for Christmas has begun!")
+        await self.NvDTeamsReminder(ctx)
 
-    # QUOTE section =====================================================================================
+    async def disableNootDoot(self, ctx):
+        channelName = ctx.channel.name.lower()
+        winningTeam = self.NVD.determineWinner(channelName)
+        self.NVD.disableNootVsDoot(channelName)
+        await ctx.channel.send("Noot vs Doot is over! Team " + winningTeam + " has won Christmas!")
+
+    async def NvDTeamsReminder(self, ctx):
+        # function is mainly called by others, no reason to call this one manually
+        channelName = ctx.channel.name.lower()
+        await ctx.channel.send("To join Team Noot, cheer 1225 bits or donate $12.25 through StreamLabs!")
+        await ctx.channel.send("To join Team Doot, cheer 1224 bits or donate $12.24 through StreamLabs!")
+        thirdTeam = self.NVD.isThird(channelName)
+        if thirdTeam[0]:
+            thirdName = thirdTeam[0].capitalize()
+            thirdBits = thirdTeam[1]
+            thirdDollar = thirdBits / 100
+            await ctx.channel.send("To join Team " + thirdName + ", cheer " + thirdBits + " bits or donate "
+                                   "$" + thirdDollar + " through StreamLabs!")
+
+    async def NvDInfo(self, ctx):
+        # function only sends info on how to join teams, is suitable for a timer
+        channelName = ctx.channel.name.lower()
+        thirdTeam = self.NVD.isThird(channelName)
+        if thirdTeam[0]:
+            thirdName = thirdTeam[0].capitalize()
+            await ctx.channel.send("Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
+                                   "War for Christmas! Join Team Noot or Team Doot help decide the victor. In addition,"
+                                   " we have Team " + thirdName + " rolling in to lay claim to Christmas! "
+                                   "Use !nvdstats to check on the current standings for the teams.")
+        else:
+            await ctx.channel.send("Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
+                                   "War for Christmas! Join Team Noot or Team Doot help decide the victor. "
+                                   "Use !nvdstats to check on the current standings for the teams.")
+        await self.NvDTeamsReminder(ctx)
+
+    async def NvDCurrentStats(self, ctx):
+        channelName = ctx.channel.name.lower()
+        NVDList = self.NVD.currentStats(channelName)
+        nootTotal = NVDList[0][3]
+        dootTotal = NVDList[0][4]
+        thirdTotal = NVDList[0][5]
+        thirdName = NVDList[0][6].capitalize()
+        if thirdName:
+            await ctx.channel.send(
+                "Current standings: Team Noot with " + nootTotal + " points. Team Doot with " + dootTotal + " points. "
+                "Team " + thirdName + " with " + thirdTotal + " points.")
+        else:
+            await ctx.channel.send(
+                "Current standings: Team Noot with " + nootTotal + " points. Team Doot with " + dootTotal + " points.")
+
+    # QUOTE section ====================================================================================================
 
     @commands.command(name='quote')
     async def quote(self, ctx):
@@ -712,7 +994,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was unable to be updated, "
                                            "please let t0rm3n7 know!")
 
-    # POINTS section ====================================================================================
+    # POINTS section ===================================================================================================
 
     @commands.command(name='bonusall')  # !bonus 5000
     async def bonusall(self, ctx):
@@ -910,7 +1192,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 await ctx.channel.send(str(viewerName) + ", you have to wait another " +
                                        str(int(timeDiffSplit[0]) + 1) + " seconds to gamble again!")
 
-    # RAFFLE Section ====================================================================================
+    # RAFFLE Section ===================================================================================================
 
     @commands.command(name='raffle')
     async def raffle(self, ctx):
@@ -1169,7 +1451,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                    " entry! Keep watching the stream, and you'll earn more points to spend on tickets!")
             self.loop.call_later(600, asyncio.create_task, self.raffle_timer(ctx))
 
-    # DATABASE section ====================================================================================
+    # DATABASE section =================================================================================================
 
     def create_connection(self, path):
         connection = None
@@ -1218,15 +1500,19 @@ class Bot(commands.Bot, ABC):  # set up the bot
         except Error as e:
             print(f"The error '{e}' occurred")
 
+    # VARIABLES Section ================================================================================================
+
     botStarted = 0
     pizzaLastTime = 0
     botLastTime = 0
     timeLastTime = 0
+    quoteLastTime = 0
+
     bitWarActive = False
     bitWarName = ""
     bitWarTeams = ["", ]
     bitWarDonations = ["", ]
-    quoteLastTime = 0
+
     raffleObject = Raffle()
     pointsPerMinute = 10
     raffleTicketCost = 500
@@ -1242,6 +1528,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
             print("PPM: " + str(pointsPerMinute))
             raffleTicketCost = constantsRow[3]
             print("tickets: " + str(raffleTicketCost))
+
+    NVD = NootVsDoot()
 
 
 if __name__ == "__main__":

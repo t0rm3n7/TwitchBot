@@ -23,8 +23,8 @@ def get_access_token():
     # print(uri)
 
     authorization_response = \
-        'http://localhost:28888#access_token=gbqyb5lur1tryh68bu0w3ce6us0g27&' \
-        'scope=&state=KOyYAmj9aYzbn2qVu1XW3M7kSzXZHx&token_type=bearer'
+        'http://localhost:28888#access_token=bzmrdo4b4gvamb201itdgq7nsu9cpw&' \
+        'scope=&state=efElODMWAYfYdq8gYKDSIH0S2650AD&token_type=bearer'
     token = client.fetch_token(authorization_response=authorization_response)
     return token
 
@@ -56,6 +56,20 @@ def liveCheck(chan_name):
     except Exception as e:
         print('gettwitchapi', e)
         return e
+
+
+def getRefreshToken():
+    print("getting refreshToken")
+    authorize_url = "https://id.twitch.tv/oauth2/authorize"
+
+    # callback url specified when the application was defined
+    callback_uri = "http://localhost:28888"
+
+    # client (application) credentials
+    client_id = os.environ['CLIENT_ID']
+    client_secret = os.environ['CLIENT_SECRET']
+
+    client = OAuth2Session(client_id, client_secret, redirect_uri=callback_uri)
 
 
 def reauthorize():
