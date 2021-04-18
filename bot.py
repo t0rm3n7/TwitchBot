@@ -13,7 +13,6 @@ from Raffle import Raffle
 import pickle
 from NootVsDoot import NootVsDoot
 
-
 timer = 0
 notmemes = [
     "Milli Vanilli is not a meme!",
@@ -21,13 +20,14 @@ notmemes = [
     "Pizza Time is not a meme!",
     "It's not a murder basement!",
     "The gnomes are just sleeping!"
-    ]
+]
 
 timeList = [
     "Planck time unit", "yoctosecond", "zeptosecond", "attosecond", "femtosecond", "picosecond", "nanosecond",
     "microsecond", "millisecond", "second", "minute", "hour", "day", "week", "fortnight", "month", "year",
-    "olympiad", "decade", "gigasecond", "century", "millenium", "aeon"
-    ]
+    "olympiad", "decade", "gigasecond", "century", "millenium", "aeon", "pizza"
+]
+
 
 # botloop = asyncio.new_event_loop()
 
@@ -46,6 +46,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
         )
 
     async def OAuthListener(self, reader, writer):
+        print("OAuth Port")
         response = await reader.readuntil(b'\n')
         responseList = re.split(r"\\r\\n", response.decode())
         responseHeader = responseList[0]
@@ -70,13 +71,14 @@ class Bot(commands.Bot, ABC):  # set up the bot
             # runs on Bot startup, but will only be reset if the bot actually goes down.
             # prevents the points accumulation from running multiple times if the bot gets disconnected from chat
             # add any loop-based timer starts here
+            self.constantsLookup()
             self.loop.call_later(30, self.list_chatters)  # used to get list of current viewers in chat, every minute
             self.loop.call_later(86400, self.reauthorize)  # should reauthorize the oauth token to prevent expiration
             await asyncio.start_server(
                 self.OAuthListener, host="localhost", port=28888, start_serving=True)
             self.NVD.autoActivate(os.environ['CHANNEL'])
             if self.NVD.active:
-                self.loop.call_later(600, asyncio.create_task, self.NvDTimer)
+                self.loop.call_later(600, asyncio.create_task, self.NvDTimer())
             self.botStarted = 1
 
     def reauthorize(self):
@@ -100,40 +102,57 @@ class Bot(commands.Bot, ABC):  # set up the bot
             else:
                 self.loop.call_later(1, self.list_chatters)
 
-    def accumulate_points(self, pointsToAdd, viewerlist):
+    def accumulate_points(self, pointsToAdd, viewerList):
         accFlag = 0
         if pointsToAdd == 0:
             print("accumulating " + str(time.time()))
-            pointsToAdd = self.pointsPerMinute
+            pointsToAdd = self.constantsDict[os.environ['CHANNEL']]["pointsPerMinute"]
             accFlag = 1
         else:
             print("BONUS! " + str(pointsToAdd))
         if accFlag == 1:
             self.loop.call_later(60, self.list_chatters)
-        pointsConnection = self.create_connection(".\\points.sqlite")
+        dbConnection = self.create_connection(".\\TwitchBot.sqlite")
         viewerTuple = ["", ]
         try:
-            viewerTuple = viewerlist.result()[0]
+            viewerTuple = viewerList.result()[0]
         except Exception:
             if accFlag != 1:
                 print("Couldn't return viewer(s) for bonus")
                 return 1
         # print(viewerTuple.all)
         for viewerName in viewerTuple.all:
-            select_points = "SELECT id, points from PointsTracking where name = ?"
-            viewers = self.execute_pointsDB_read_query(pointsConnection, select_points, (viewerName,))
+            select_points = "SELECT pointsID, points FROM PointsList " \
+                            "INNER JOIN ViewerList vl USING(viewerID) " \
+                            "WHERE vl.viewerName = ?"
+            viewers = self.execute_read_query(dbConnection, select_points, (viewerName,))
             if viewers:
                 # updating
                 for viewerRow in viewers:
+
                     newPoints = int(viewerRow[1]) + pointsToAdd
-                    update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerRow[0])
-                    self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                      (newPoints,))
+                    update_points = "UPDATE PointsList " \
+                                    "SET points = ? " \
+                                    "WHERE pointsID = ?"
+                    self.execute_write_query(dbConnection, update_points, (newPoints, viewerRow[0]))
             else:
                 # insert
-                insert_points = "INSERT into PointsTracking (channel, name, points) VALUES (?, ?, ?)"
-                self.execute_pointsDB_write_query(pointsConnection, insert_points,
-                                                  (os.environ['CHANNEL'], viewerName, pointsToAdd))
+                selectChannel = "SELECT channelID FROM ChannelList WHERE channelName = ?"
+                channelList = self.execute_read_query(dbConnection, selectChannel, (os.environ['CHANNEL'],))
+                if channelList:
+                    channelID = channelList[0][0]
+                    selectViewer = "SELECT viewerID FROM ViewerList WHERE viewerName = ?"
+                    viewerList = self.execute_read_query(dbConnection, selectViewer, (viewerName,))
+                    if viewerList:
+                        viewerID = viewerList[0][0]
+                    else:
+                        insertViewer = "INSERT into ViewerList (viewerName) VALUES (?)"
+                        self.execute_write_query(dbConnection, insertViewer, (viewerName, ))
+                        selectViewer = "SELECT viewerID FROM ViewerList WHERE viewerName = ?"
+                        viewerList = self.execute_read_query(dbConnection, selectViewer, (viewerName,))
+                        viewerID = viewerList[0][0]
+                    insert_points = "INSERT into PointsList (channelID, viewerID, points) VALUES (?, ?, ?)"
+                    self.execute_write_query(dbConnection, insert_points, (channelID, viewerID, pointsToAdd))
 
     """async def event_raw_data(self, data):
         # Prints every chat event.
@@ -200,7 +219,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
     @commands.command(name='time')
     async def time(self, ctx):
         timeCooldown = time.time() - self.timeLastTime
-        if timeCooldown > 45:
+        if timeCooldown > 30:
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
                 num1 = random.randrange(1, 200, 1)
@@ -225,7 +244,9 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         unit2 = unit2 + "s"
                 else:
                     unit2 = str(random.choice(timeList))
-
+                if num1 == 9 and unit1.lower().startswith("month"):
+                    num2 = 1
+                    unit2 = "baby"
                 await ctx.channel.send(str(num1) + " " + unit1 + "? That's almost " + str(num2) + " " + unit2 + "!")
             else:
                 commandList = re.split(" ", ctx.content, 2)
@@ -243,7 +264,9 @@ class Bot(commands.Bot, ABC):  # set up the bot
                             unit2 = unit2 + "s"
                     else:
                         unit2 = str(random.choice(timeList))
-
+                    if timeValue == "9" and timeUnits.lower().startswith("month"):
+                        num2 = 1
+                        unit2 = "baby"
                     await ctx.channel.send(
                         timeValue + " " + timeUnits + "? That's almost " + str(num2) + " " + unit2 + "!")
                 else:
@@ -273,39 +296,100 @@ class Bot(commands.Bot, ABC):  # set up the bot
         # HonorableJay's tip reward 10/29/2020
         await ctx.channel.send("ACTUAL CANNIBAL SHIA LABEOUF!!")
 
+    @commands.command(name='notthatbad')
+    async def notthatbad(self, ctx):
+        await ctx.channel.send("I dOn'T kNoW gIlDeR. iT dOeSn'T lOoK tHaT bAd. grtSHROOK ")
+
+    @commands.command(name='raidmessage')
+    async def raidmessage(self, ctx):
+        numSpaces = re.findall(" ", ctx.content)
+        if len(numSpaces) < 1:
+            await ctx.channel.send(
+                "Example usage: '!raidmessage list' to list potential raid messages from the stream. "
+                "'!raidmessage add <message>' to add a raid message to the list.")
+        else:
+            ctxList = re.split(" ", ctx.content, 2)
+            if ctxList[1] == "list":
+                if len(self.raidList) > 0:
+                    message = 'Potential Raid Messages: "'
+                    for raidMessage in self.raidList:
+                        if len(message + '", "' + raidMessage) > 500:
+                            message = message.rstrip(', "')
+                            await ctx.channel.send(message)
+                            message = 'Potential Raid Messages: "'
+                        message = message + raidMessage + '", "'
+                    match = re.search(r'(.*), "$', message)
+                    await ctx.channel.send(match.group(1))
+                else:
+                    await ctx.channel.send(
+                        "There are no potential Raid Messages yet. "
+                        "Use '!raidmessage add <message>' to add a potential raid message to the list!")
+            elif ctxList[1] == "add":
+                channelName = ctx.channel.name.lower()
+                if ctx.author.name.lower() == channelName or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+                    newRaidMessage = ctxList[2]
+                    messagePresent = False
+                    for raidMessage in self.raidList:
+                        if newRaidMessage.lower() == raidMessage.lower():
+                            messagePresent = True
+                    if messagePresent is True:
+                        await ctx.channel.send("This message is already in the list!")
+                    else:
+                        self.raidList.append(newRaidMessage)
+                        await ctx.channel.send("Added a new potential raid message to the list!")
+            else:
+                await ctx.channel.send(
+                    "Example usage: '!raidmessage list' to list potential raid messages from the stream. "
+                    "'!raidmessage add <message>' to add a raid message to the list.")
+
+    """@commands.command(name='roulette', aliases=['faq', ])
+    async def roulette(self, ctx):
+        await ctx.channel.send(
+            "Gilder is running a 24-hour roguelite marathon! Every new run gets a spin on the main roulette wheel, "
+            "but if you donate, you can shift the results to a game more to your liking. Higher donations have other "
+            "effects, like choosing a specific game and/or challenge. For full information on the event, go to "
+            "https://tinyurl.com/RouletteFAQ")"""
+
+    @commands.command(name='nexus', aliases=['store', ])
+    async def nexus(self, ctx):
+        await ctx.channel.send(
+            "Gilder has a Nexus.gg store, where you can buy games and a bit goes back to Gilder! Visit "
+            "https://www.nexus.gg/Gildersneeze to view his promoted games and buy if you like!")
+
     # BIT WAR section ==================================================================================================
     @commands.command(name='war')
     async def war(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
-                await ctx.channel.send("Example usage: '!war start', '!war on', '!war off', '!war delete', "
-                                       "'!war team', and '!war bits'. Please use the commands as listed to see more "
-                                       "info on how to use them.")
+                await ctx.channel.send(
+                    "Example usage: '!war start', '!war on', '!war off', '!war delete', '!war team', and '!war bits'/"
+                    "'!war tips'. Please use the commands as listed to see more info on how to use them.")
             else:
                 warList = re.split(" ", ctx.content, 2)
                 warCommand = warList[1].lower()
                 if warCommand == "start":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
                         if len(numSpaces) < 2:
-                            await ctx.channel.send("Example usage: '!war start Waifu in Portia' will setup a bit "
-                                                   "war for 'Waifu in Portia'.")
+                            await ctx.channel.send(
+                                "Example usage: '!war start Waifu in Portia' will setup a bid war for 'Waifu in "
+                                "Portia'.")
                         else:
                             if self.bitWarActive is True:
                                 await ctx.channel.send(
-                                    "There is an active bit war already in progress. Please turn off "
-                                    "the current bit war to start a new one.")
+                                    "There is an active bid war already in progress. Please turn off the current bid "
+                                    "war to start a new one.")
                             else:
                                 warSubCommand = warList[2]
                                 # add to DB if warSubCommand (bit war name) isn't already present
                                 dbConnection = sqlite3.connect(".\\points.sqlite")
                                 selectBitWar = "SELECT * from BitWars where channelName = ? AND bitWarName = ?"
-                                bitWarLookup = self.execute_pointsDB_read_query(
+                                bitWarLookup = self.execute_read_query(
                                     dbConnection, selectBitWar, (ctx.channel.name, warSubCommand))
                                 if bitWarLookup:
                                     # Bit War exists
                                     await ctx.channel.send(
-                                        ctx.author.name + ", this bit war already exists. "
+                                        ctx.author.name + ", this bid war already exists. "
                                         "Please open it using the command '!war on " + warSubCommand + "'")
                                 else:
                                     # Bit war doesn't exist, insert new row into DB
@@ -319,29 +403,29 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                     insertBitWar = "INSERT into BitWars " \
                                                    "(channelName, bitWarName, donationTeams, donationTotals) " \
                                                    "VALUES (?,?,?,?)"
-                                    self.execute_pointsDB_write_query(
+                                    self.execute_write_query(
                                         dbConnection, insertBitWar,
                                         (ctx.channel.name, self.bitWarName, convertedTeams, convertedTotals))
                                     await ctx.channel.send(
                                         ctx.author.name + " has started a bid war for " + str(warSubCommand) + ". "
                                         "This bid war is now open, but will need to have the teams populated with "
-                                        "'!war team add'. To check the status, use the command '!bitwar' in chat!")
+                                        "'!war team add'. To check the status, use the command '!bidwar' in chat!")
                 elif warCommand == "on":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
                         if len(numSpaces) < 2:
-                            await ctx.channel.send("Example usage: '!war on Waifu in Portia' will start up the bit "
+                            await ctx.channel.send("Example usage: '!war on Waifu in Portia' will start up the bid "
                                                    "war for 'Waifu in Portia'.")
                         else:
                             if self.bitWarActive is True:
                                 await ctx.channel.send(
-                                    "There is an active bit war already in progress. Please turn off "
-                                    "the current bit war to start a new one.")
+                                    "There is an active bid war already in progress. Please turn off the current bid "
+                                    "war to start a new one.")
                             else:
                                 warSubCommand = warList[2]
                                 # lookup values from DB to bring into memory
                                 dbConnection = sqlite3.connect(".\\points.sqlite")
                                 selectBitWar = "SELECT * from BitWars where channelName = ? AND bitWarName = ?"
-                                bitWarLookup = self.execute_pointsDB_read_query(
+                                bitWarLookup = self.execute_read_query(
                                     dbConnection, selectBitWar, (ctx.channel.name, warSubCommand))
                                 if bitWarLookup:
                                     # Bit War exists
@@ -355,42 +439,42 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                         self.bitWarDonations = pickle.loads(bytes.fromhex(bitWarLookup[0][4]))
                                     else:
                                         self.bitWarDonations = list()
-                                    await ctx.channel.send("Bid War for " + str(warSubCommand) + " is now open. "
-                                                           "All bits/tips will now be added to the current bid war, "
-                                                           "as long as you use a hashtag for the team you want to win. "
-                                                           "To check the status, use the command '!bitwar' in chat!")
+                                    await ctx.channel.send(
+                                        "Bid War for " + str(warSubCommand) + " is now open. All bits/tips will now "
+                                        "be added to the current bid war, as long as you use a hashtag for the team "
+                                        "you want to win. To check the status, use the command '!bidwar' in chat!")
                                     await self.bitWarCheck(ctx)
                                 else:
                                     # Bit War isn't in database
-                                    await ctx.channel.send(ctx.author.name + ", that bit war doesn't exist! Please "
-                                                           "create it using the command '!war start " +
-                                                           warSubCommand + "'")
+                                    await ctx.channel.send(
+                                        ctx.author.name + ", that bid war doesn't exist! Please create it using the "
+                                        "command '!war start " + warSubCommand + "'")
                 elif warCommand == "off":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
                         if len(numSpaces) != 1:
                             await ctx.channel.send(
-                                "Example usage: '!war off' will turn off the currently active bit war.")
+                                "Example usage: '!war off' will turn off the currently active bid war.")
                         else:
                             if self.bitWarActive is False:
                                 await ctx.channel.send(
-                                    "There is no active bit war to turn off! "
-                                    "Example usage: '!war off' will turn off the currently active bit war.")
+                                    "There is no active bid war to turn off! Example usage: '!war off' will turn off "
+                                    "the currently active bid war.")
                             else:
                                 # make a final write to the DB to ensure saved data before clearing memory
                                 dbConnection = sqlite3.connect(".\\points.sqlite")
                                 selectBitWar = "SELECT * FROM BitWars " \
                                                "WHERE channelName = ? AND bitWarName = ?"
-                                bitWarLookup = self.execute_pointsDB_read_query(
+                                bitWarLookup = self.execute_read_query(
                                     dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
                                 if bitWarLookup:
-                                    # Bit War exists so update it
+                                    # Bid War exists so update it
                                     cachedName = str(self.bitWarName)
                                     convertedTeams = pickle.dumps(self.bitWarTeams).hex()
                                     convertedTotals = pickle.dumps(self.bitWarDonations).hex()
                                     updateBitWar = "UPDATE BitWars " \
                                                    "SET donationTeams = ?, donationTotals = ?" \
                                                    "WHERE channelName = ? AND bitWarName = ? "
-                                    self.execute_pointsDB_write_query(
+                                    self.execute_write_query(
                                         dbConnection, updateBitWar,
                                         (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
                                     self.bitWarActive = False
@@ -399,27 +483,27 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                     self.bitWarDonations = list()
                                     await ctx.channel.send("Bid War for " + str(cachedName) + " is now closed.")
                                 else:
-                                    await ctx.channel.send("I have no idea how you got to this point, but something "
-                                                           "probably broke. No SQL row was found for the current bit "
-                                                           "war. Please let t0rm3n7 know. :|")
+                                    await ctx.channel.send(
+                                        "I have no idea how you got to this point, but something probably broke. No "
+                                        "SQL row was found for the current bid war. Please let t0rm3n7 know. :|")
                 elif warCommand == "delete":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
                         if len(numSpaces) < 2:
                             await ctx.channel.send("Example usage: '!war delete Waifu in Portia' will delete the "
-                                                   "bit war 'Waifu in Portia' and remove it from the database.")
+                                                   "bid war 'Waifu in Portia' and remove it from the database.")
                         else:
                             warSubCommand = warList[2]
                             # delete the bit war from DB
                             dbConnection = sqlite3.connect(".\\points.sqlite")
                             selectBitWar = "SELECT * FROM BitWars " \
                                            "WHERE channelName = ? AND bitWarName = ?"
-                            bitWarLookup = self.execute_pointsDB_read_query(
+                            bitWarLookup = self.execute_read_query(
                                 dbConnection, selectBitWar, (ctx.channel.name, warSubCommand))
                             if bitWarLookup:
                                 # Bit War exists so delete it
                                 deleteBitWar = "DELETE FROM BitWars " \
                                                "WHERE channelName = ? AND bitWarName = ?"
-                                self.execute_pointsDB_write_query(
+                                self.execute_write_query(
                                     dbConnection, deleteBitWar, (ctx.channel.name, warSubCommand))
                                 if self.bitWarActive and self.bitWarName == warSubCommand:
                                     self.bitWarActive = False
@@ -427,8 +511,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                     self.bitWarTeams = list()
                                     self.bitWarDonations = list()
                                     await ctx.channel.send(
-                                        "Bid War for " + str(warSubCommand) +
-                                        " has been turned off and removed from the database.")
+                                        "Bid War for " + str(warSubCommand) + " has been turned off and removed from "
+                                        "the database.")
                                 else:
                                     await ctx.channel.send(
                                         "Bid War for " + str(warSubCommand) + " has been removed from the database.")
@@ -441,11 +525,11 @@ class Bot(commands.Bot, ABC):  # set up the bot
                             or ctx.author.is_mod:
                         if len(numSpaces) < 3:
                             await ctx.channel.send("Example usage: '!war team add Emily' will add Emily to the "
-                                                   "currently active bit war. '!war team remove Emily' will remove "
-                                                   "Emily from the currently active bit war.")
+                                                   "currently active bid war. '!war team remove Emily' will remove "
+                                                   "Emily from the currently active bid war.")
                         else:
                             if self.bitWarActive is False:
-                                await ctx.channel.send("There is no active bit war for which to modify the teams!")
+                                await ctx.channel.send("There is no active bid war for which to modify the teams!")
                             else:
                                 warList = re.split(" ", ctx.content, 3)
                                 warSubCommand = warList[2]
@@ -459,23 +543,24 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                     dbConnection = sqlite3.connect(".\\points.sqlite")
                                     selectBitWar = "SELECT * FROM BitWars " \
                                                    "WHERE channelName = ? AND bitWarName = ?"
-                                    bitWarLookup = self.execute_pointsDB_read_query(
+                                    bitWarLookup = self.execute_read_query(
                                         dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
                                     if bitWarLookup:
                                         # Bit War exists so update it
                                         updateBitWar = "UPDATE BitWars " \
                                                        "SET donationTeams = ?, donationTotals = ?" \
                                                        "WHERE channelName = ? AND bitWarName = ? "
-                                        self.execute_pointsDB_write_query(
+                                        self.execute_write_query(
                                             dbConnection, updateBitWar,
                                             (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
-                                        await ctx.channel.send("Added the #" + str(warString) + " team to the " +
-                                                               str(self.bitWarName) + " bid war.")
+                                        await ctx.channel.send(
+                                            "Added the #" + str(warString) + " team to the " + str(self.bitWarName) +
+                                            " bid war.")
                                     else:
                                         # Bit War doesn't exist in database
                                         await ctx.channel.send(
-                                            "Bid War for " + str(self.bitWarName) +
-                                            " doesn't exist in database to update.")
+                                            "Bid War for " + str(self.bitWarName) + " doesn't exist in database to "
+                                            "update.")
                                 elif warSubCommand == "remove":
                                     # update the team info in memory, then update the DB
                                     index = self.bitWarTeams.index(warString)
@@ -486,34 +571,35 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                     dbConnection = sqlite3.connect(".\\points.sqlite")
                                     selectBitWar = "SELECT * FROM BitWars " \
                                                    "WHERE channelName = ? AND bitWarName = ?"
-                                    bitWarLookup = self.execute_pointsDB_read_query(
+                                    bitWarLookup = self.execute_read_query(
                                         dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
                                     if bitWarLookup:
-                                        # Bit War exists so update it
+                                        # Bid War exists so update it
                                         updateBitWar = "UPDATE BitWars " \
                                                        "SET donationTeams = ?, donationTotals = ?" \
                                                        "WHERE channelName = ? AND bitWarName = ? "
-                                        self.execute_pointsDB_write_query(
+                                        self.execute_write_query(
                                             dbConnection, updateBitWar,
                                             (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
-                                        await ctx.channel.send("Removed the #" + str(warString) + " team from the " +
-                                                               str(self.bitWarName) + " bid war.")
-                                    else:
-                                        # Bit War doesn't exist in database
                                         await ctx.channel.send(
-                                            "Bid War for " + str(self.bitWarName) +
-                                            " doesn't exist in database to update.")
-                elif warCommand == "bits":
+                                            "Removed the #" + str(warString) + " team from the " + str(self.bitWarName)
+                                            + " bid war.")
+                                    else:
+                                        # Bid War doesn't exist in database
+                                        await ctx.channel.send(
+                                            "Bid War for " + str(self.bitWarName) + " doesn't exist in database to "
+                                            "update.")
+                elif warCommand == "bits" or warCommand == "tip" or warCommand == "bit" or warCommand == "tips":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" \
                             or ctx.author.is_mod:
                         if len(numSpaces) < 3:
-                            await ctx.channel.send("Example usage: '!war bits add Emily 667' will add $6.67 or "
-                                                   "667 bits to the total amount for Team Emily. '!war bits "
-                                                   "subtract Emily 420' will remove $4.20 or 420 bits from the "
-                                                   "total amount for Team Emily.")
+                            await ctx.channel.send(
+                                "Example usage: '!war " + warCommand + " add Emily 667' will add $6.67 or 667 bits to "
+                                "the total amount for Team Emily. '!war " + warCommand + " subtract Emily 420' will "
+                                "remove $4.20 or 420 bits from the total amount for Team Emily.")
                         else:
                             if self.bitWarActive is False:
-                                await ctx.channel.send("There is no active bit war for which to adjust the donation "
+                                await ctx.channel.send("There is no active bid war for which to adjust the donation "
                                                        "totals!")
                             else:
                                 warList = re.split(" ", ctx.content, 4)
@@ -531,14 +617,14 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                         dbConnection = sqlite3.connect(".\\points.sqlite")
                                         selectBitWar = "SELECT * FROM BitWars " \
                                                        "WHERE channelName = ? AND bitWarName = ?"
-                                        bitWarLookup = self.execute_pointsDB_read_query(
+                                        bitWarLookup = self.execute_read_query(
                                             dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
                                         if bitWarLookup:
                                             # Bit War exists so update it
                                             updateBitWar = "UPDATE BitWars " \
                                                            "SET donationTeams = ?, donationTotals = ?" \
                                                            "WHERE channelName = ? AND bitWarName = ? "
-                                            self.execute_pointsDB_write_query(
+                                            self.execute_write_query(
                                                 dbConnection, updateBitWar,
                                                 (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
                                             await ctx.channel.send("Added " + str(warAmount) + " to the " +
@@ -548,7 +634,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                             await ctx.channel.send(
                                                 "Bid War for " + str(self.bitWarName) +
                                                 " doesn't exist in database to update.")
-                                    elif warSubCommand == "subtract":
+                                    elif warSubCommand == "subtract" or warSubCommand == "remove":
                                         # update the team info in memory, then update the DB
                                         index = self.bitWarTeams.index(warName)
                                         self.bitWarDonations[index] -= abs(int(warAmount))
@@ -557,14 +643,14 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                         dbConnection = sqlite3.connect(".\\points.sqlite")
                                         selectBitWar = "SELECT * FROM BitWars " \
                                                        "WHERE channelName = ? AND bitWarName = ?"
-                                        bitWarLookup = self.execute_pointsDB_read_query(
+                                        bitWarLookup = self.execute_read_query(
                                             dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
                                         if bitWarLookup:
                                             # Bit War exists so update it
                                             updateBitWar = "UPDATE BitWars " \
                                                            "SET donationTeams = ?, donationTotals = ?" \
                                                            "WHERE channelName = ? AND bitWarName = ? "
-                                            self.execute_pointsDB_write_query(
+                                            self.execute_write_query(
                                                 dbConnection, updateBitWar,
                                                 (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
                                             await ctx.channel.send("Subtracted " + str(warAmount) + " from the " +
@@ -575,22 +661,22 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                                 "Bid War for " + str(self.bitWarName) +
                                                 " doesn't exist in database to update.")
                                 else:
-                                    await ctx.channel.send("Example usage: '!war bits add Emily 667' will add $6.67 or "
-                                                           "667 bits to the total amount for Team Emily. '!war bits "
-                                                           "subtract Emily 420' will remove $4.20 or 420 bits from the "
-                                                           "total amount for Team Emily.")
+                                    await ctx.channel.send(
+                                        "Example usage: '!war " + warCommand + " add Emily 667' will add $6.67 or 667 "
+                                        "bits to the total amount for Team Emily. '!war " + warCommand + " subtract "
+                                        "Emily 420' will remove $4.20 or 420 bits from the total amount for Team Emily.")
                 else:
-                    await ctx.channel.send("Example usage: '!war start', '!war on', '!war off', '!war delete', "
-                                           "'!war team', and '!war bits'. Please use the commands as listed to see "
-                                           "more info on how to use them.")
+                    await ctx.channel.send(
+                        "Example usage: '!war start', '!war on', '!war off', '!war delete', '!war team', and '!war "
+                        "bits'/'!war tips'. Please use the commands as listed to see more info on how to use them.")
 
-    @commands.command(name="bitwar")
+    @commands.command(name="bitwar", aliases=["bidwar", ])
     async def bitwar(self, ctx):
         await self.bitWarCheck(ctx)
 
     async def bitWarCheck(self, ctx):
         if self.bitWarActive is True:
-            teamTotalsList = "Current Bit War: " + self.bitWarName
+            teamTotalsList = "Current Bid War: " + self.bitWarName
             if self.bitWarTeams:
                 teamTotalsList = teamTotalsList + ", Current Totals:"
                 for team in self.bitWarTeams:
@@ -602,7 +688,14 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 teamTotalsList = teamTotalsList + ", but there are no teams for which to list totals!"
             await ctx.channel.send(teamTotalsList)
         else:
-            await ctx.channel.send("There is no active bit war at this time.")
+            await ctx.channel.send("There is no active bid war at this time.")
+
+    @commands.command(name='warinfo')
+    async def warinfo(self, ctx):
+        await ctx.channel.send(
+            "There's a bid war to choose who we marry in Stardew Valley! Each penny or bit is one point! Just let "
+            "Gilder or a mod know who you'd like it to go toward in the tip message.")
+        await self.bitWarCheck(ctx)
 
     # NOOT vs DOOT section =============================================================================================
     @commands.command(name='noot')
@@ -638,7 +731,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
             else:
                 await ctx.channel.send("Noot vs Doot is currently disabled.")
 
-    @commands.command(name='nootvsdoot')
+    @commands.command(name='nootvsdoot', aliases=["NootVsDoot", "NootvsDoot"])
     async def nootVsDoot(self, ctx):
         # main command for info and enabling/disabling
         channelName = ctx.channel.name.lower()
@@ -655,14 +748,14 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 if nootList[1] == "start":
                     if not self.NVD.active:
                         # NVD is not active
-                        self.NVD.enableNootVsDoot(channelName)
+                        await self.enableNootDoot(ctx)
                     else:
                         # NVD is active
                         await ctx.channel.send("Noot vs Doot is already enabled.")
                 elif nootList[1] == "end":
                     if self.NVD.active:
                         # NVD is active
-                        self.NVD.disableNootVsDoot(channelName)
+                        await self.disableNootDoot(ctx)
                     else:
                         # NVD is not active
                         await ctx.channel.send("Noot vs Doot is already disabled.")
@@ -672,8 +765,10 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         "'!nvdstats', '!nvdcaptainpoints', and '!nvdteamchange'")
                 elif nootList[1] == "third":
                     if len(numSpaces) < 3:
-                        await ctx.channel.send("Example usage: '!nootvsdoot third 1226 shrook' to set the third team "
-                                               "as Team Shrook with a bit value of 1226 to track points for that team.")
+                        await ctx.channel.send(
+                            "Example usage: '!nootvsdoot third 1226 shrook' to set the third team as Team Shrook with "
+                            "a bit value of 1226 to track points for that team. If you ask nicely, t0rm3n7 might even "
+                            "put in a command for the third team name too!")
                     else:
                         thirdList = re.split(" ", ctx.content, 4)
                         teamBits = thirdList[2]
@@ -681,15 +776,17 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         status = self.NVD.enableExtraTeam(channelName, teamName, teamBits)
                         await ctx.channel.send(status)
                 else:
-                    await ctx.channel.send("Example Usage: '!nootvsdoot' to display information about Noot vs Doot. "
-                                           "'!nootvsdoot start' to enable Noot vs Doot and will enable the various "
-                                           "team commands: '!noot', '!doot', and '!third' for adding/removing points. "
-                                           "'!nootvsdoot end' will disable Noot vs Doot and clear the loyalty points "
-                                           "for all viewers as well as the grand totals. '!nootvsdoot third' for help "
-                                           "on how to add the third team to the roster. '!nootvsdoot commands' will "
-                                           "display the current command list for Noot vs Doot.")
-                    await ctx.channel.send("If a bot crash were to occur, on startup, the bot will check if "
-                                           "Noot vs Doot was active last session.")
+                    await ctx.channel.send(
+                        "Example Usage: '!nootvsdoot' to display information about Noot vs Doot. '!nootvsdoot start' "
+                        "to enable Noot vs Doot and will enable the various team commands: '!noot', '!doot', and "
+                        "'!third' for adding/removing points. '!nootvsdoot end' will disable Noot vs Doot and clear "
+                        "the loyalty points for all viewers as well as the grand totals. '!nootvsdoot third' for help "
+                        "on how to add the third team to the roster. '!nootvsdoot commands' will display the current "
+                        "command list for Noot vs Doot.")
+
+                    await ctx.channel.send(
+                        "If a bot crash were to occur, on startup, the bot will check if Noot vs Doot was active last "
+                        "session.")
         elif ctx.author.is_mod:
             # mods cannot start or stop Noot vs Doot, but they have all the other commands listed
             numSpaces = re.findall(" ", ctx.content)
@@ -697,7 +794,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 if self.NVD.active:
                     await self.NvDInfo(ctx)
                 else:
-                    await ctx.channel.send("Noot vs Doot is currently disabled. For more info, use '!nootvsdoot help'.")
+                    await ctx.channel.send(
+                        "Noot vs Doot is currently disabled. For more info, use '!nootvsdoot help'.")
             else:
                 nootList = re.split(" ", ctx.content, 2)
                 if nootList[1] == "commands":
@@ -705,11 +803,12 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         "List of commands related to Noot vs Doot: '!nootvsdoot', '!noot', '!doot', '!third', "
                         "'!nvdstats', '!nvdcaptainpoints', and '!nvdteamchange'")
                 else:
-                    await ctx.channel.send("Example Usage: '!nootvsdoot' to display information about Noot vs Doot. "
-                                           "'!nootvsdoot commands' will display the current command list for "
-                                           "Noot vs Doot.")
-                    await ctx.channel.send("If a bot crash were to occur, on startup, the bot will check if "
-                                           "Noot vs Doot was active last session.")
+                    await ctx.channel.send(
+                        "Example Usage: '!nootvsdoot' to display information about Noot vs Doot. '!nootvsdoot commands'"
+                        " will display the current command list for Noot vs Doot.")
+                    await ctx.channel.send(
+                        "If a bot crash were to occur, on startup, the bot will check if Noot vs Doot was active last "
+                        "session.")
         else:
             # normal viewers
             if self.NVD.active:
@@ -733,12 +832,14 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         currentNoots = str(statsList[0][4])
                         currentDoots = str(statsList[0][5])
                         currentThird = str(statsList[0][6])
-                        if self.NVD.teams[2]:
+                        if self.NVD.teamsDict[channelName]["third"]["name"]:
                             # third team
-                            thirdName = self.NVD.teams[2]
+                            thirdName = self.NVD.teamsDict[channelName]["third"]["name"]
+                            if currentTeam == "third":
+                                currentTeam = thirdName.capitalize()
                             await ctx.channel.send(
                                 viewerName + ", you are on Team " + currentTeam + ". Noots: " + currentNoots + ", "
-                                "Doots: " + currentDoots + ", " + thirdName + ": " + currentThird)
+                                "Doots: " + currentDoots + ", " + thirdName + "s: " + currentThird)
                         else:
                             # no third team
                             await ctx.channel.send(
@@ -750,8 +851,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         await self.NvDTeamsReminder(ctx)
                 else:
                     await ctx.channel.send(
-                        "Example usage: '!nvdstats' for overall standings of the teams. "
-                        "'!nvdstats me' to see which team you're allied with, and your standings with the other teams.")
+                        "Example usage: '!nvdstats' for overall standings of the teams. '!nvdstats me' to see which "
+                        "team you're allied with, and your standings with the other teams.")
         else:
             await ctx.channel.send("Noot vs Doot is not currently running.")
 
@@ -792,10 +893,12 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         "Example usage: '!nvdteamchange t0rm3n7 doot' to move t0rm3n7 to Team Doot.")
                 else:
                     ctxList = re.split(" ", ctx.content, 3)
-                    if ctxList[2].lower() in self.NVD.teams:
+                    if ctxList[2].lower() in [record['name'] for record in self.NVD.teamsDict[channelName].values()]:
                         # specified team is in the list of recognized teams
                         viewerName = ctxList[1]
-                        teamName = ctxList[2]
+                        teamName = ctxList[2].lower
+                        if teamName not in ["noot", "doot"]:
+                            teamName = "third"
                         status = self.NVD.forceTeamChange(channelName, viewerName, teamName)
                         await ctx.channel.send(status)
                     else:
@@ -809,44 +912,48 @@ class Bot(commands.Bot, ABC):  # set up the bot
         numSpaces = re.findall(" ", ctx.content)
         if len(numSpaces) < 1:
             # add one point via force adding
-            if teamName == "third":
-                teamName = self.NVD.teams[2]
             self.NVD.forceAddRemove(channelName, teamName, 1)
+            if teamName == "third":
+                teamName = self.NVD.teamsDict[channelName]["third"]["name"]
             await ctx.channel.send("Adding one point for Team " + teamName.capitalize())
         elif len(numSpaces) < 2:
             # add/remove multiple points via force adding or listing help topic
             nootList = re.split(" ", ctx.content, 2)
             if nootList[1] == "help":
-                await ctx.channel.send(ctx.author.name + " Example usage: '!" + teamName + "' to add one point for that"
-                                       " team. '!" + teamName + " 4' to add four points for that team. "
-                                       "If needing to add a bit amount from a viewer, use '!" + teamName + " "
-                                       "1225 t0rm3n7' to add the bit value and let the bot handle the math! Just "
-                                       "remember to make the value in the bit format instead of a flat dollar amount."
-                                       "If you make the value negative for any of the numerical commands, "
-                                       "then the value would be removed from the totals.")
+                await ctx.channel.send(
+                    ctx.author.name + " Example usage: '!" + teamName + "' to add one point for that team. '!" +
+                    teamName + " 4' to add four points for that team. If needing to add a bit amount from a viewer, "
+                    "use '!" + teamName + " 1225 t0rm3n7' to add the bit value and let the bot handle the math! Just "
+                    "remember to make the value in the bit format instead of a flat dollar amount.If you make the "
+                    "value negative for any of the numerical commands, then the value would be removed from the totals.")
             elif nootList[1].isnumeric() or re.match(r"-\d+", nootList[1]):
-                if teamName == "third":
-                    teamName = self.NVD.teams[2]
                 self.NVD.forceAddRemove(channelName, teamName, int(nootList[1]))
                 if int(nootList[1]) < 0:
+                    if teamName == "third":
+                        teamName = self.NVD.teamsDict[channelName]["third"]["name"]
                     await ctx.channel.send(
                         "Removing " + str(abs(int(nootList[1]))) + " point(s) for Team " + teamName.capitalize())
                 else:
+                    if teamName == "third":
+                        teamName = self.NVD.teamsDict[channelName]["third"]["name"]
                     await ctx.channel.send("Adding " + nootList[1] + " point(s) for Team " + teamName.capitalize())
         elif len(numSpaces) < 3:
             # add/remove multiple points for a viewer via bit amount
             nootList = re.split(" ", ctx.content, 3)
-            donation = int(nootList[1])
-            viewerName = nootList[2]
-            if teamName == "third":
-                teamName = self.NVD.teams[2]
-            if donation < 0:
-                absDonation = abs(donation)
-                status = self.NVD.removeDonation(channelName, teamName, viewerName, absDonation)
-                await ctx.channel.send(status)
+            if re.match(r"\d+\.\d*", nootList[1]):
+                await ctx.channel.send(ctx.author.name + ", please format the donation in the form of bits.")
             else:
-                status = self.NVD.addDonation(channelName, teamName, viewerName, donation)
-                await ctx.channel.send(status)
+                donation = int(nootList[1])
+                viewerName = nootList[2].lower()
+                if viewerName.startswith("@"):
+                    viewerName = viewerName.lstrip("@")
+                if donation < 0:
+                    absDonation = abs(donation)
+                    status = self.NVD.removeDonation(channelName, teamName, viewerName, absDonation)
+                    await ctx.channel.send(status)
+                else:
+                    status = self.NVD.addDonation(channelName, teamName, viewerName, donation)
+                    await ctx.channel.send(status)
 
     async def enableNootDoot(self, ctx):
         channelName = ctx.channel.name.lower()
@@ -857,9 +964,9 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     async def disableNootDoot(self, ctx):
         channelName = ctx.channel.name.lower()
-        winningTeam = self.NVD.determineWinner(channelName)
+        winningTeamString = self.NVD.determineWinner(channelName)
         self.NVD.disableNootVsDoot(channelName)
-        await ctx.channel.send("Noot vs Doot is over! Team " + winningTeam + " has won Christmas!")
+        await ctx.channel.send(winningTeamString)
 
     async def NvDTeamsReminder(self, ctx):
         # function is mainly called by others, no reason to call this one manually
@@ -871,8 +978,9 @@ class Bot(commands.Bot, ABC):  # set up the bot
             thirdName = thirdTeam[0].capitalize()
             thirdBits = thirdTeam[1]
             thirdDollar = thirdBits / 100
-            await ctx.channel.send("To join Team " + thirdName + ", cheer " + thirdBits + " bits or donate "
-                                   "$" + thirdDollar + " through StreamLabs!")
+            await ctx.channel.send(
+                "To join Team " + thirdName + ", cheer " + thirdBits + " bits or donate $" + thirdDollar +
+                " through StreamLabs!")
 
     async def NvDInfo(self, ctx):
         # function only sends info on how to join teams, is suitable for a timer
@@ -880,14 +988,15 @@ class Bot(commands.Bot, ABC):  # set up the bot
         thirdTeam = self.NVD.isThird(channelName)
         if thirdTeam[0]:
             thirdName = thirdTeam[0].capitalize()
-            await ctx.channel.send("Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
-                                   "War for Christmas! Join Team Noot or Team Doot help decide the victor. In addition,"
-                                   " we have Team " + thirdName + " rolling in to lay claim to Christmas! "
-                                   "Use !nvdstats to check on the current standings for the teams.")
+            await ctx.channel.send(
+                "Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the War for Christmas! "
+                "Join Team Noot or Team Doot help decide the victor. In addition, we have Team " + thirdName +
+                " rolling in to lay claim to Christmas! Use !nvdstats to check on the current standings for the teams.")
         else:
-            await ctx.channel.send("Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
-                                   "War for Christmas! Join Team Noot or Team Doot help decide the victor. "
-                                   "Use !nvdstats to check on the current standings for the teams.")
+            await ctx.channel.send(
+                "Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the War for Christmas! "
+                "Join Team Noot or Team Doot help decide the victor. Use !nvdstats to check on the current standings "
+                "for the teams.")
         await self.NvDTeamsReminder(ctx)
 
     async def NvDCurrentStats(self, ctx):
@@ -908,38 +1017,44 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 str(dootTotal) + " points.")
 
     async def NvDTimer(self):
+        print("NVDtimer")
         if self.NVD.active:
             isLive = LiveCheck.liveCheck(os.environ['CHANNEL'])
             if isLive:
                 ws = self._ws
                 channelName = os.environ['CHANNEL'][0]
-                thirdTeam = self.NVD.isThird(channelName.lower())
-                if thirdTeam[0]:
-                    thirdName = thirdTeam[0].capitalize()
+                thirdTeam = self.NVD.teamsDict[channelName]["third"]["name"]
+                if thirdTeam:
+                    thirdName = thirdTeam.capitalize()
                     message = str(
                         "Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
                         "War for Christmas! Join Team Noot or Team Doot help decide the victor. In addition,"
                         " we have Team " + thirdName + " rolling in to lay claim to Christmas! "
-                        "Use !nvdstats to check on the current standings for the teams.")
+                                                       "Use !nvdstats to check on the current standings for the teams.")
                 else:
                     message = str(
                         "Noot vs Doot is Happening! Penguins are fighting against the Skeleton Army in the "
                         "War for Christmas! Join Team Noot or Team Doot help decide the victor. "
                         "Use !nvdstats to check on the current standings for the teams.")
                 await ws.send_privmsg(channelName, message)
-            self.loop.call_later(600, asyncio.create_task, self.NvDTimer)
+            self.loop.call_later(600, asyncio.create_task, self.NvDTimer())
 
     # QUOTE section ====================================================================================================
 
     @commands.command(name='quote')
     async def quote(self, ctx):
+        dbConnection = self.create_connection(".\\TwitchBot.sqlite")
         quoteCooldown = time.time() - self.quoteLastTime
-        if quoteCooldown > 60:
+        if quoteCooldown > 10:
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
-                pointsConnection = self.create_connection(".\\points.sqlite")
-                selectQuote = "SELECT id, quote FROM Quotes where channelName = ? ORDER BY RANDOM() LIMIT 1;"
-                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (ctx.channel.name,))
+                selectQuote = "SELECT quoteID, quoteText " \
+                              "FROM Quotes " \
+                              "INNER JOIN ChannelList cl " \
+                              "USING(channelID) " \
+                              "WHERE cl.channelName = ? " \
+                              "ORDER BY RANDOM() LIMIT 1;"
+                quoteLookup = self.execute_read_query(dbConnection, selectQuote, (ctx.channel.name,))
                 if quoteLookup:
                     quoteID = int(quoteLookup[0][0])
                     quote = quoteLookup[0][1]
@@ -951,10 +1066,13 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 quoteList = re.split(" ", ctx.content, 1)
                 quoteID = quoteList[1]
                 if quoteID.isnumeric():
-                    pointsConnection = self.create_connection(".\\points.sqlite")
-                    selectQuote = "SELECT quote from Quotes where id = ? and channelName = ?"
-                    quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote,
-                                                                   (quoteID, ctx.channel.name, ))
+                    selectQuote = "SELECT quoteText " \
+                                  "FROM Quotes q1 " \
+                                  "INNER JOIN ChannelList cl " \
+                                  "USING(channelID) " \
+                                  "WHERE q1.quoteID = ? and cl.channelName = ?"
+                    quoteLookup = self.execute_read_query(dbConnection, selectQuote,
+                                                                   (quoteID, ctx.channel.name,))
                     if quoteLookup:
                         quote = quoteLookup[0][0]
                         await ctx.channel.send("#" + str(quoteID) + ": \"" + quote + "\" - Gilder, 2017")
@@ -967,48 +1085,63 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     @commands.command(name='addquote')
     async def addquote(self, ctx):
-        if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+        if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" \
+                or ctx.author.is_mod or ctx.author.is_subscriber:
+            dbConnection = self.create_connection(".\\TwitchBot.sqlite")
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
                 await ctx.channel.send("Example command usage: '!addquote <quote>' to add a quote to the bot!")
             else:
                 quoteList = re.split(" ", ctx.content, 1)
                 quote = quoteList[1]
-                pointsConnection = self.create_connection(".\\points.sqlite")
-                insertQuote = "INSERT into Quotes (channelName, quote) VALUES (?, ?)"
-                self.execute_pointsDB_write_query(pointsConnection, insertQuote, (ctx.channel.name, quote))
-                selectQuote = "SELECT id from Quotes where quote = ?"
-                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (quote,))
-                if quoteLookup:
-                    quoteID = quoteLookup[0][0]
-                    await ctx.channel.send(ctx.author.name + ", the quote was added as quote #" + str(quoteID))
+                selectChannel = "SELECT channelID " \
+                                "FROM ChannelList " \
+                                "WHERE channelName = ?"
+                channelLookup = self.execute_read_query(dbConnection, selectChannel, (ctx.channel.name,))
+                if channelLookup:
+                    channelID = channelLookup[0][0]
+                    insertQuote = "INSERT INTO Quotes (channelID, quote) " \
+                                  "VALUES (?, ?)"
+                    self.execute_write_query(dbConnection, insertQuote, (ctx.channel.name, quote))
+                    selectQuote = "SELECT quoteID FROM Quotes " \
+                                  "WHERE quoteText = ?"
+                    quoteLookup = self.execute_read_query(dbConnection, selectQuote, (quote,))
+                    if quoteLookup:
+                        quoteID = quoteLookup[0][0]
+                        await ctx.channel.send(ctx.author.name + ", the quote was added as quote #" + str(quoteID))
+                    else:
+                        await ctx.channel.send(
+                            ctx.author.name + ", something went wrong with the quoteID lookup. Please let t0rm3n7 know!")
                 else:
-                    await ctx.channel.send(ctx.author.name + ", something went wrong with the ID lookup. "
-                                                             "Please let t0rm3n7 know!")
+                    await ctx.channel.send(
+                        ctx.author.name + ", something went wrong with the channelID lookup. Please let t0rm3n7 know!")
 
     @commands.command(name='deletequote')
     async def deletequote(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            dbConnection = self.create_connection(".\\TwitchBot.sqlite")
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 1:
                 await ctx.channel.send("Example command usage: '!deletequote 25' to remove quote #25.")
             else:
                 quoteList = re.split(" ", ctx.content, 1)
                 quoteID = quoteList[1]
-                pointsConnection = self.create_connection(".\\points.sqlite")
-                deleteQuote = "DELETE from Quotes where id = ?"
-                self.execute_pointsDB_write_query(pointsConnection, deleteQuote, (quoteID,))
-                selectQuote = "SELECT * from Quotes where id = ?"
-                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (quoteID,))
+                deleteQuote = "DELETE FROM Quotes " \
+                              "WHERE quoteID = ?"
+                self.execute_write_query(dbConnection, deleteQuote, (quoteID,))
+                selectQuote = "SELECT * FROM Quotes " \
+                              "WHERE quoteID = ?"
+                quoteLookup = self.execute_read_query(dbConnection, selectQuote, (quoteID,))
                 if quoteLookup:
                     await ctx.channel.send(ctx.author.name + ", the quote was unable to be deleted. Please let "
-                                           "t0rm3n7 know.")
+                                                             "t0rm3n7 know.")
                 else:
                     await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was deleted successfully!")
 
     @commands.command(name='editquote')
     async def editquote(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
+            dbConnection = self.create_connection(".\\TwitchBot.sqlite")
             numSpaces = re.findall(" ", ctx.content)
             if len(numSpaces) < 2:
                 await ctx.channel.send("Example command usage: '!editquote 13 B i G S H R i M P i N' to change quote "
@@ -1017,18 +1150,18 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 quoteList = re.split(" ", ctx.content, 2)
                 quoteID = quoteList[1]
                 newQuote = quoteList[2]
-                pointsConnection = self.create_connection(".\\points.sqlite")
-                deleteQuote = "UPDATE Quotes " \
-                              "SET quote = ? " \
-                              "WHERE id = ?"
-                self.execute_pointsDB_write_query(pointsConnection, deleteQuote, (newQuote, quoteID,))
-                selectQuote = "SELECT * from Quotes where id = ?"
-                quoteLookup = self.execute_pointsDB_read_query(pointsConnection, selectQuote, (quoteID,))
-                if quoteLookup[2] == newQuote:
+                updateQuote = "UPDATE Quotes " \
+                              "SET quoteText = ? " \
+                              "WHERE quoteID = ?"
+                self.execute_write_query(dbConnection, updateQuote, (newQuote, quoteID,))
+                selectQuote = "SELECT quoteText FROM Quotes " \
+                              "WHERE quoteID = ?"
+                quoteLookup = self.execute_read_query(dbConnection, selectQuote, (quoteID,))
+                if quoteLookup[0][0] == newQuote:
                     await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was updated successfully!")
                 else:
                     await ctx.channel.send(ctx.author.name + ", quote #" + quoteID + " was unable to be updated, "
-                                           "please let t0rm3n7 know!")
+                                                                                     "please let t0rm3n7 know!")
 
     # POINTS section ===================================================================================================
 
@@ -1062,20 +1195,24 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 atSymbol = re.match("@", viewerName)
                 if atSymbol:
                     viewerName = re.sub("@", "", viewerName)
-                pointsConnection = self.create_connection(".\\points.sqlite")
-                select_points = "SELECT id, points from PointsTracking where name = ?"
-                viewers = self.execute_pointsDB_read_query(pointsConnection, select_points, (viewerName,))
+                dbConnection = self.create_connection(".\\TwitchBot.sqlite")
+                select_points = "SELECT pointsID, points " \
+                                "FROM PointsList pl " \
+                                "INNER JOIN ViewerList vl USING(viewerID) " \
+                                "WHERE vl.viewerName = ?"
+                viewers = self.execute_read_query(dbConnection, select_points, (viewerName,))
                 if viewers:
                     # updating
                     for viewerRow in viewers:
                         newPoints = int(viewerRow[1]) + pointsToAdd
-                        update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerRow[0])
-                        self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                          (newPoints,))
+                        pointsID = str(viewerRow[0])
+                        update_points = "UPDATE PointsList SET points = ? WHERE id = ?"
+                        self.execute_write_query(dbConnection, update_points,
+                                                          (newPoints, pointsID))
                 else:
                     # insert
                     insert_points = "INSERT into PointsTracking (channel, name, points) VALUES (?, ?, ?)"
-                    self.execute_pointsDB_write_query(pointsConnection, insert_points,
+                    self.execute_write_query(dbConnection, insert_points,
                                                       (ctx.channel.name, viewerName, pointsToAdd))
                 await ctx.channel.send(str(pointsToAdd) + " grtOne added for " + viewerName)
 
@@ -1093,9 +1230,11 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     async def pointcheckcall(self, ctx):
         viewerName = ctx.author.name
-        pointsConnection = self.create_connection(".\\points.sqlite")
-        select_users = "SELECT points from PointsTracking where name = ?"
-        viewers = self.execute_pointsDB_read_query(pointsConnection, select_users, (viewerName,))
+        dbConnection = self.create_connection(".\\TwitchBot.sqlite")
+        selectPoints = "SELECT points FROM PointsList " \
+                       "INNER JOIN ViewerList vl USING(viewerID) " \
+                       "WHERE vl.viewerName = ?"
+        viewers = self.execute_read_query(dbConnection, selectPoints, (viewerName,))
         if viewers:
             for viewerRow in viewers:
                 await ctx.channel.send(str(viewerName) + ", you have " + str(viewerRow[0]) + " grtOne ")
@@ -1107,12 +1246,11 @@ class Bot(commands.Bot, ABC):  # set up the bot
         allFlag = False
         numSpaces = re.findall(" ", ctx.content)
         if len(numSpaces) != 1:
-            await ctx.channel.send("Example command usage: '!gamble 69' to bet 69 grtOne on a roll of the 'dice'. "
-                                   "A 61 or higher is a win, and pays double your bet. "
-                                   "A roll of 99 or 100 is a MAXIMOPTIMAL win and pays TRIPLE your bet! "
-                                   "There might even be special points rewards for certain rolls with certain bets!"
-                                   "If you want to join the high rollers club (fyi: not actually a thing), "
-                                   "you can also bet all your points with '!gamble all'!")
+            await ctx.channel.send(
+                "Example command usage: '!gamble 69' to bet 69 grtOne on a roll of the 'dice'. A 61 or higher is a win,"
+                " and pays double your bet. A roll of 99 or 100 is a MAXIMOPTIMAL win and pays TRIPLE your bet! There "
+                "might even be a special points reward for rolls with a certain bet! You can also bet all your points "
+                "with '!gamble all'!")
         else:
             points = re.split(" ", ctx.content)
             try:
@@ -1122,104 +1260,138 @@ class Bot(commands.Bot, ABC):  # set up the bot
                 if pointsToGamble == "all":
                     allFlag = True
                 else:
-                    await ctx.channel.send("Cannot update points. Please format in '!gamble #' to bet your points. "
-                                           "If you're trying to bet all your points try '!gamble all'.")
+                    await ctx.channel.send(
+                        "Please format in '!gamble #' to bet your points. If you're trying to bet all your points try "
+                        "'!gamble all'.")
             viewerName = ctx.author.name
+            channelName = ctx.channel.name
             currentTime = time.time()
             cooldownExpired = True
             sixtyNine = False
             gambleDiff = 0
 
-            pointsConnection = self.create_connection(".\\points.sqlite")
+            dbConnection = self.create_connection(".\\TwitchBot.sqlite")
 
-            select_gamble = "SELECT * from GambleCooldown where user = ?"
-            gamble = self.execute_pointsDB_read_query(pointsConnection, select_gamble, (viewerName,))
-            if not gamble:
+            selectGamble = "SELECT * FROM GambleCooldown " \
+                           "INNER JOIN ViewerList vl USING(viewerID) " \
+                           "INNER JOIN ChannelList cl USING(channelID) " \
+                           "WHERE vl.viewerName = ? and cl.channelName = ?"
+            gambleList = self.execute_read_query(dbConnection, selectGamble, (viewerName, channelName))
+            if not gambleList:
+                # getting viewerID and channelID
+                selectViewer = "SELECT * FROM ViewerList WHERE viewerName = ?"
+                viewerList = self.execute_read_query(dbConnection, selectViewer, (viewerName, ))
+                if viewerList:
+                    viewerID = viewerList[0][0]
+                else:
+                    ctx.channel.send("No entry in viewer list for " + viewerName + ".")
+                    return 0
+                selectChannel = "SELECT * FROM ChannelList WHERE channelName = ?"
+                channelList = self.execute_read_query(dbConnection, selectChannel, (channelName,))
+                if channelList:
+                    channelID = channelList[0][0]
+                else:
+                    ctx.channel.send("No entry in viewer list for " + viewerName + ".")
+                    return 0
                 # insert
-                insert_gamble = "INSERT into GambleCooldown (channel, user, lastGamble, sixtynineflag) " \
+                insert_gamble = "INSERT into GambleCooldown (channelID, viewerID, lastGamble, sixtynineflag) " \
                                 "VALUES (?, ?, ?, ?)"
-                self.execute_pointsDB_write_query(pointsConnection, insert_gamble,
-                                                  (ctx.channel.name, viewerName, 0, sixtyNine))
+                self.execute_write_query(dbConnection, insert_gamble, (channelID, viewerID, 0, sixtyNine))
+                selectGamble = "SELECT * FROM GambleCooldown " \
+                               "INNER JOIN ViewerList vl USING(viewerID) " \
+                               "INNER JOIN ChannelList cl USING(channelID) " \
+                               "WHERE vl.viewerName = ? and cl.channelName = ?"
+                gambleList = self.execute_read_query(dbConnection, selectGamble, (viewerName, channelName))
+                if gambleList:
+                    gambleID = gambleList[0][0]
+                    channelID = gambleList[0][1]
+                    viewerID = gambleList[0][2]
+                    lastGamble = gambleList[0][3]
+                    sixtyNine = gambleList[0][4]
             else:
-                for gambleRow in gamble:
+                for gambleRow in gambleList:
+                    gambleID = gambleRow[0]
+                    channelID = gambleRow[1]
+                    viewerID = gambleRow[2]
                     lastGamble = gambleRow[3]
                     sixtyNine = gambleRow[4]
                     gambleDiff = (float(currentTime) - float(lastGamble))
                     if gambleDiff < 1800:
                         cooldownExpired = False
             if cooldownExpired is True:
-                select_users = "SELECT id, points from PointsTracking where name = ?"
-                viewers = self.execute_pointsDB_read_query(pointsConnection, select_users, (viewerName,))
+                selectPoints = "SELECT pointsID, points, viewerID, channelID FROM PointsList " \
+                               "INNER JOIN ViewerList vl USING(viewerID) " \
+                               "INNER JOIN ChannelList cl USING(channelID) " \
+                               "WHERE vl.viewerName = ? AND cl.channelName = ?"
+                viewers = self.execute_read_query(dbConnection, selectPoints, (viewerName, channelName))
                 if viewers:
                     for viewerRow in viewers:
-                        viewerID = viewerRow[0]
-                        currentpoints = viewerRow[1]
+                        pointsID = viewerRow[0]
+                        currentPoints = viewerRow[1]
+                        viewerID = viewerRow[2]
+                        channelID = viewerRow[3]
                         if allFlag:
-                            pointsToGamble = currentpoints
-                        if pointsToGamble > currentpoints:
+                            pointsToGamble = currentPoints
+                        if pointsToGamble > currentPoints:
                             await ctx.channel.send(str(viewerName) + ", you cannot back your bet! You only have " +
-                                                   str(currentpoints) + " grtOne available.")
+                                                   str(currentPoints) + " grtOne available.")
                         else:
-                            currentpoints -= pointsToGamble
+                            currentPoints -= pointsToGamble
                             gambleroll = random.randrange(1, 101)
                             if gambleroll == 69 and pointsToGamble == 69 and sixtyNine is False:
                                 # print("6969")
-                                currentpoints += (pointsToGamble*2)
-                                update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerID)
-                                self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                                  (currentpoints,))
+                                currentPoints += (pointsToGamble * 2)
+                                update_points = "UPDATE PointsList SET points = ? WHERE PointsID = ?"
+                                self.execute_write_query(dbConnection, update_points, (currentPoints, pointsID))
                                 update_gamble = "UPDATE GambleCooldown " \
                                                 "SET lastGamble = ?, sixtynineflag = ? " \
-                                                "WHERE user = '" + str(viewerName) + "'"
-                                self.execute_pointsDB_write_query(pointsConnection, update_gamble,
-                                                                  (currentTime, True))
-                                await ctx.channel.send("Hell Yeah! " + ctx.author.name +
-                                                       ", you rolled " + str(gambleroll) +
-                                                       ". You have won 6969 grtOne ! "
-                                                       "You now have " + str(currentpoints) + " grtOne .")
+                                                "WHERE viewerID = ? AND channelID = ?"
+                                self.execute_write_query(dbConnection, update_gamble,
+                                                         (currentTime, True, viewerID, channelID))
+                                await ctx.channel.send(
+                                    "Hell Yeah! " + ctx.author.name + ", you rolled " + str(gambleroll) + ". You have "
+                                    "won 6969 grtOne ! You now have " + str(currentPoints) + " grtOne .")
                             elif gambleroll < 61:
                                 # print("lose")
-                                update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerID)
-                                self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                                  (currentpoints,))
+                                update_points = "UPDATE PointsList SET points = ? WHERE pointsID = ?"
+                                self.execute_write_query(dbConnection, update_points, (currentPoints, pointsID))
                                 update_gamble = "UPDATE GambleCooldown " \
-                                                "SET lastGamble = ? " \
-                                                "WHERE user = '" + str(viewerName) + "'"
-                                self.execute_pointsDB_write_query(pointsConnection, update_gamble,
-                                                                  (currentTime,))
+                                                "SET lastGamble = ?" \
+                                                "WHERE viewerID = ? AND channelID = ?"
+                                self.execute_write_query(dbConnection, update_gamble,
+                                                         (currentTime, viewerID, channelID))
                                 await ctx.channel.send(
                                     ctx.author.name + ", you rolled " + str(gambleroll) +
-                                    ". You lost your bet. :( You now have " + str(currentpoints) + " grtOne .")
+                                    ". You lost your bet. :( You now have " + str(currentPoints) + " grtOne .")
                             elif gambleroll < 99:
                                 # print("win")
-                                currentpoints += (pointsToGamble*2)
-                                update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerID)
-                                self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                                  (currentpoints,))
+                                currentPoints += (pointsToGamble * 2)
+                                update_points = "UPDATE PointsList SET points = ? WHERE pointsID = ?"
+                                self.execute_write_query(dbConnection, update_points, (currentPoints, pointsID))
                                 update_gamble = "UPDATE GambleCooldown " \
-                                                "SET lastGamble = ? " \
-                                                "WHERE user = '" + str(viewerName) + "'"
-                                self.execute_pointsDB_write_query(pointsConnection, update_gamble,
-                                                                  (currentTime,))
+                                                "SET lastGamble = ?" \
+                                                "WHERE viewerID = ? AND channelID = ?"
+                                self.execute_write_query(dbConnection, update_gamble,
+                                                         (currentTime, viewerID, channelID))
                                 await ctx.channel.send(
                                     ctx.author.name + ", you rolled " + str(gambleroll) +
-                                    ". You have won " + str(pointsToGamble*2) + " grtOne . "
-                                    "You now have " + str(currentpoints) + " grtOne .")
+                                    ". You have won " + str(pointsToGamble * 2) + " grtOne . "
+                                                                                  "You now have " + str(
+                                        currentPoints) + " grtOne .")
                             else:
                                 # print("superwin")
-                                currentpoints += (pointsToGamble*3)
-                                update_points = "UPDATE PointsTracking SET points = ? WHERE id = " + str(viewerID)
-                                self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                                  (currentpoints,))
+                                currentPoints += (pointsToGamble * 3)
+                                update_points = "UPDATE PointsList SET points = ? WHERE pointsID = ?"
+                                self.execute_write_query(dbConnection, update_points, (currentPoints, pointsID))
                                 update_gamble = "UPDATE GambleCooldown " \
-                                                "SET lastGamble = ? " \
-                                                "WHERE user = '" + str(viewerName) + "'"
-                                self.execute_pointsDB_write_query(pointsConnection, update_gamble,
-                                                                  (currentTime,))
+                                                "SET lastGamble = ?" \
+                                                "WHERE viewerID = ? AND channelID = ?"
+                                self.execute_write_query(dbConnection, update_gamble,
+                                                         (currentTime, viewerID, channelID))
                                 await ctx.channel.send(
-                                    ctx.author.name + " hit the BIG SHOT! You rolled " + str(gambleroll) +
-                                    "! You have won " + str(pointsToGamble*3) + " grtOne ."
-                                    " You now have " + str(currentpoints) + " grtOne .")
+                                    ctx.author.name + " hit the BIG SHOT! You rolled " + str(gambleroll) + "! You have "
+                                    "won " + str(pointsToGamble * 3) + " grtOne . You now have " + str(currentPoints) +
+                                    " grtOne .")
                 else:
                     await ctx.channel.send(str(viewerName) + ", you have no grtOne to gamble!")
             else:
@@ -1233,7 +1405,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
     @commands.command(name='raffle')
     async def raffle(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name.lower() == "t0rm3n7":
-            raffleActive = self.raffleObject.is_active()
+            raffleActive = self.raffleObject.is_active(ctx.channel.name)
             if raffleActive:
                 await ctx.channel.send("There is already an active raffle!")
             else:
@@ -1247,16 +1419,17 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     channelName = ctx.channel.name
                     self.raffleObject.open_raffle(channelName, rafflePrize)
                     self.loop.call_later(600, asyncio.create_task, self.raffle_timer(ctx))
-                    await ctx.channel.send("Started a WAFFLE for the following prize: " + rafflePrize +
-                                           ". Get your tickets using the !buytickets command! Everyone gets one free "
-                                           "entry, but you can keep watching the stream to get points ( grtOne ) "
-                                           "to buy tickets! Each ticket is " + str(self.raffleTicketCost) + " grtOne "
-                                           "so spend wisely, or use !gamble to get more points!")
+                    await ctx.channel.send(
+                        "Started a WAFFLE for the following prize: " + rafflePrize + ". Get your tickets using the "
+                        "!buytickets command! Everyone gets one free entry, but you can keep watching the stream to "
+                        "get points ( grtOne ) to buy tickets! Each ticket is " +
+                        str(self.constantsDict["raffleTicketCost"]) + " grtOne so spend wisely, or use !gamble to get "
+                        "more points!")
 
     @commands.command(name='loadraffle')
     async def loadraffle(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name.lower() == "t0rm3n7":
-            active = self.raffleObject.is_active()
+            active = self.raffleObject.is_active(ctx.channel.name)
             if active:
                 ctx.channel.send("There is already an active raffle.")
             else:
@@ -1273,29 +1446,29 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     @commands.command(name='raffleinfo')
     async def raffleinfo(self, ctx):
-        raffleActive = self.raffleObject.is_active()
+        raffleActive = self.raffleObject.is_active(ctx.channel.name)
         if not raffleActive:
             await ctx.channel.send("There is no active raffle at the moment.")
         else:
-            rafflePrize = self.raffleObject.what_prize()
-            raffleTickets = self.raffleObject.get_total_tickets()
-            await ctx.channel.send("Gilder is currently raffling off: " + rafflePrize +
-                                   ". There are " + str(raffleTickets) + " tickets currently in the pool. "
-                                   "Get your tickets using the !buytickets command! Everyone gets one free entry, but "
-                                   "you can keep watching the stream to get points ( grtOne ) to buy tickets! Each "
-                                   "ticket is " + str(self.raffleTicketCost) + " grtOne so spend wisely, or use !gamble"
-                                   " to get more points!")
+            rafflePrize = self.raffleObject.what_prize(ctx.channel.name)
+            raffleTickets = self.raffleObject.get_total_tickets(ctx.channel.name)
+            await ctx.channel.send(
+                "Gilder is currently raffling off: " + rafflePrize + ". There are " + str(raffleTickets) + " tickets "
+                "currently in the pool. Get your tickets using the !buytickets command! Everyone gets one free entry, "
+                "but you can keep watching the stream to get points ( grtOne ) to buy tickets! Each ticket is " +
+                str(self.constantsDict["raffleTicketCost"]) + " grtOne so spend wisely, or use !gamble to get more "
+                "points!")
 
-    @commands.command(name='buyticket')
+    @commands.command(name='buyticket', aliases=['BuyTicket', 'Buyticket', 'buyTicket'])
     async def buyticket(self, ctx):
         await self.buyticketcall(ctx)
 
-    @commands.command(name='buytickets')
+    @commands.command(name='buytickets', aliases=['BuyTickets', 'Buytickets', 'buyTickets'])
     async def buytickets(self, ctx):
         await self.buyticketcall(ctx)
 
     async def buyticketcall(self, ctx):
-        active = self.raffleObject.is_active()
+        active = self.raffleObject.is_active(ctx.channel.name)
         overHundred = False
         if not active:
             await ctx.channel.send("There is no active raffle for which to buy tickets! "
@@ -1314,117 +1487,119 @@ class Bot(commands.Bot, ABC):  # set up the bot
                     else:
                         viewerName = ctx.author.name
                         channelName = ctx.channel.name
-                        currentTickets = self.raffleObject.list_tickets(viewerName)  # lists number of tickets in raffle
-                        maxTickets = 100 - currentTickets  # set max number of tickets available for purchase out of 100
+                        raffleMaxTickets = int(self.constantsDict[channelName]["raffleMaxTickets"])
+                        raffleTicketCost = int(self.constantsDict[channelName]["raffleTicketCost"])
+                        # listing number of tickets in raffle for viewer
+                        currentTickets = self.raffleObject.list_tickets(channelName, viewerName)
+                        # set max number of tickets available for purchase out of overall max (default 100)
+                        maxTickets = raffleMaxTickets - currentTickets
                         estimatedTicketTotal = numTickets + currentTickets
-                        if currentTickets >= 100:
+                        if currentTickets >= raffleMaxTickets:
                             await ctx.channel.send(viewerName + ", you already have the max number of tickets per "
-                                                   "raffle! You can only have up to 100 tickets in the raffle.")
+                                                   "raffle! You can only have up to " + str(raffleMaxTickets) +
+                                                   " tickets in the raffle.")
                         else:
-                            if numTickets > 100 or estimatedTicketTotal > 100:
+                            if numTickets > int(raffleMaxTickets) or estimatedTicketTotal > raffleMaxTickets:
                                 overHundred = True
                                 numTickets = maxTickets  # set number of tickets to purchase to the maximum allowed
-                            cost = int(self.raffleTicketCost) * int(numTickets)
+                            cost = raffleTicketCost * int(numTickets)
                             print(cost)
-                            pointsConnection = self.create_connection(".\\points.sqlite")
-                            select_points = "SELECT id, points from PointsTracking where name = ?"
-                            viewers = self.execute_pointsDB_read_query(pointsConnection, select_points, (viewerName,))
+                            dbConnection = self.create_connection(".\\TwitchBot.sqlite")
+                            select_points = "SELECT pointsID, points " \
+                                            "FROM PointsList pl " \
+                                            "INNER JOIN ViewerList vl USING (viewerID) " \
+                                            "WHERE vl.viewerName = ?"
+                            viewers = self.execute_read_query(dbConnection, select_points, (viewerName,))
                             if viewers:
                                 for viewerRow in viewers:
-                                    viewerID = viewerRow[0]
+                                    pointsID = viewerRow[0]
                                     currentPoints = viewerRow[1]
-                                    inList = self.raffleObject.in_list(viewerName)
+                                    inList = self.raffleObject.in_list(channelName, viewerName)
                                     if inList is False:
-                                        cost -= int(self.raffleTicketCost)
+                                        cost -= int(raffleTicketCost)
                                         # print(cost)
                                     if int(cost) > int(currentPoints):
                                         if inList is False:
                                             self.raffleObject.add_tickets(channelName, viewerName, 1)
-                                            await ctx.channel.send(str(viewerName) + ", you cannot buy that many "
-                                                                   "tickets! You only have " + str(currentPoints) +
-                                                                   " grtOne available. However, everyone gets one free "
-                                                                   "entry, so you now have 1 ticket in the raffle! Keep"
-                                                                   " watching the stream, and you'll earn more points "
-                                                                   "to spend on tickets! Tickets are 500 grtOne each, "
-                                                                   "so you can purchase up to " +
-                                                                   str(int(currentPoints/self.raffleTicketCost)) +
-                                                                   " tickets right now.")
+                                            await ctx.channel.send(
+                                                str(viewerName) + ", you cannot buy that many tickets! You only have "
+                                                + str(currentPoints) + " grtOne available. However, everyone gets one "
+                                                "free entry, so you now have 1 ticket in the raffle! Keep watching the "
+                                                "stream, and you'll earn more points to spend on tickets! Tickets are "
+                                                "500 grtOne each, so you can purchase up to " +
+                                                str(int(currentPoints / raffleTicketCost)) + " tickets right now.")
                                         else:
-                                            await ctx.channel.send(str(viewerName) + ", you cannot buy that many "
-                                                                   "tickets! You only have " + str(currentPoints) +
-                                                                   " grtOne available, and your free ticket has already"
-                                                                   " been claimed. Tickets are 500 grtOne each, so you "
-                                                                   "can purchase up to " +
-                                                                   str(int(currentPoints/self.raffleTicketCost))
-                                                                   + " tickets right now.")
+                                            await ctx.channel.send(
+                                                str(viewerName) + ", you cannot buy that many tickets! You only have "
+                                                + str(currentPoints) + " grtOne available, and your free ticket has "
+                                                "already been claimed. Tickets are 500 grtOne each, so you can purchase"
+                                                " up to " + str(int(currentPoints / raffleTicketCost)) + " tickets "
+                                                "right now.")
                                     else:
                                         self.raffleObject.add_tickets(channelName, viewerName, int(numTickets))
                                         currentPoints -= cost
-                                        totalTickets = self.raffleObject.list_tickets(viewerName)
-                                        update_points = "UPDATE PointsTracking SET points = ? WHERE id = "\
-                                                        + str(viewerID)
-                                        self.execute_pointsDB_write_query(pointsConnection, update_points,
-                                                                          (currentPoints,))
+                                        totalTickets = self.raffleObject.list_tickets(channelName, viewerName)
+                                        update_points = "UPDATE PointsList SET points = ? WHERE pointsID = ?"
+                                        self.execute_write_query(dbConnection, update_points, (currentPoints, pointsID))
                                         if inList is False:
                                             if int(numTickets) == 1:
-                                                await ctx.channel.send(str(viewerName) + ", you have claimed your free "
-                                                                       "ticket. You now have a total of " +
-                                                                       str(totalTickets) + " tickets in this raffle.")
+                                                await ctx.channel.send(
+                                                    str(viewerName) + ", you have claimed your free ticket. You now "
+                                                    "have a total of " + str(totalTickets) + " tickets in this raffle.")
                                             else:
-                                                await ctx.channel.send(str(viewerName) + ", you have purchased " +
-                                                                       str(int(numTickets) - 1) + " tickets for the "
-                                                                       "current raffle, and claimed your free ticket. "
-                                                                       "You now have a total of " + str(totalTickets) +
-                                                                       " tickets in this raffle.")
+                                                await ctx.channel.send(
+                                                    str(viewerName) + ", you have purchased " + str(int(numTickets) - 1)
+                                                    + " tickets for the current raffle, and claimed your free ticket. "
+                                                    "You now have a total of " + str(totalTickets) + " tickets in this "
+                                                    "raffle.")
                                         else:
                                             await ctx.channel.send(
                                                 str(viewerName) + ", you have purchased " + str(numTickets) +
                                                 " tickets for the current raffle. You now have a total of " +
                                                 str(totalTickets) + " tickets in this raffle.")
                             else:
-                                await ctx.channel.send("You have no grtOne to spend on tickets! "
-                                                       "However, everyone gets one free entry! Keep watching the stream"
-                                                       ", and you'll earn more points to spend on tickets! Tickets are "
-                                                       "500 grtOne each, so look out for bonuses or try gambling for "
-                                                       "extra points!")
+                                await ctx.channel.send(
+                                    "You have no grtOne to spend on tickets! However, everyone gets one free entry! "
+                                    "Keep watching the stream, and you'll earn more points to spend on tickets! "
+                                    "Tickets are " + str(raffleTicketCost) + " grtOne each, so look out for bonuses or "
+                                    "try gambling for extra points!")
                                 self.raffleObject.add_tickets(channelName, viewerName, 1)
                 else:
-                    await ctx.channel.send("Example command usage: "
-                                           "'!buytickets 5' to buy 5 tickets in an active raffle.")
+                    await ctx.channel.send(
+                        "Example command usage: '!buytickets 5' to buy 5 tickets in an active raffle.")
 
     @commands.command(name='addtickets')
     async def addtickets(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
-            active = self.raffleObject.is_active()
             channelName = ctx.channel.name
+            active = self.raffleObject.is_active(channelName)
             if not active:
-                await ctx.channel.send("There is no active raffle for which to add tickets! "
-                                       "When there is a raffle, use '!addticket t0rm3n7 5' to give t0rm3n7 5 tickets.")
+                await ctx.channel.send(
+                    "There is no active raffle for which to add tickets! When there is a raffle, use '!addticket "
+                    "t0rm3n7 5' to give t0rm3n7 5 tickets.")
             else:
                 numSpaces = re.findall(" ", ctx.content)
                 if len(numSpaces) != 2:
-                    await ctx.channel.send("Example command usage: '!addticket t0rm3n7 5'"
-                                           " to give t0rm3n7 5 tickets in an active raffle")
+                    await ctx.channel.send(
+                        "Example command usage: '!addticket t0rm3n7 5' to give t0rm3n7 5 tickets in an active raffle")
                 else:
                     raffleList = re.split(" ", ctx.content)
                     viewerName = str(raffleList[1])
                     try:
                         numTickets = int(raffleList[2])
                     except ValueError as bonusError:
-                        await ctx.channel.send("Cannot update points. "
-                                               "Please format in !addticket <username> <tickets>. "
-                                               "Ex: !bonus t0rm3n7 5000")
+                        await ctx.channel.send("Cannot add tickets for " + viewerName)
                         return bonusError
                     self.raffleObject.add_tickets(channelName, viewerName, int(numTickets))
-                    totalTickets = self.raffleObject.list_tickets(viewerName)
-                    await ctx.channel.send("You have added " + str(numTickets) +
-                                           " tickets into the raffle for " + viewerName + ", free of charge. "
-                                           "They now have a total of " + str(totalTickets) + " tickets in the raffle.")
+                    totalTickets = self.raffleObject.list_tickets(channelName, viewerName)
+                    await ctx.channel.send(
+                        "You have added " + str(numTickets) + " tickets into the raffle for " + viewerName + ". They "
+                        "now have a total of " + str(totalTickets) + " tickets in the raffle.")
 
     @commands.command(name='draw')
     async def draw(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name.lower() == "t0rm3n7":
-            active = self.raffleObject.is_active()
+            active = self.raffleObject.is_active(ctx.channel.name)
             if not active:
                 await ctx.channel.send("There is no active raffle for which to draw a winner! "
                                        "When there is a raffle, use '!draw' to pick the winning ticket.")
@@ -1445,20 +1620,20 @@ class Bot(commands.Bot, ABC):  # set up the bot
         await self.ticketcountcall(ctx)
 
     async def ticketcountcall(self, ctx):
-        active = self.raffleObject.is_active()
+        active = self.raffleObject.is_active(ctx.channel.name)
         viewerName = ctx.author.name
         if not active:
             await ctx.channel.send("There is no active raffle for which to check your number of purchased tickets! "
                                    "When there is a raffle, use '!ticketcount' to see your ticket total.")
         else:
-            totalTickets = self.raffleObject.list_tickets(viewerName)
+            totalTickets = self.raffleObject.list_tickets(ctx.channel.name, viewerName)
             await ctx.channel.send(
                 viewerName + ", you have " + str(totalTickets) + " tickets in the current raffle.")
 
     @commands.command(name='raffleupdate')
     async def raffleupdate(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name.lower() == "t0rm3n7":
-            raffleActive = self.raffleObject.is_active()
+            raffleActive = self.raffleObject.is_active(ctx.channel.name)
             if not raffleActive:
                 await ctx.channel.send("There isn't an active raffle! You can start a raffle with !raffle")
             else:
@@ -1480,8 +1655,8 @@ class Bot(commands.Bot, ABC):  # set up the bot
             await ctx.channel.send("Winner has claimed their prize! Raffle is officially closed!")
 
     async def raffle_timer(self, ctx):
-        if self.raffleObject.is_active():
-            currentPrize = self.raffleObject.prize
+        if self.raffleObject.is_active(ctx.channel.name.lower()):
+            currentPrize = self.raffleObject.what_prize(ctx.channel.name.lower())
             await ctx.channel.send("There is a raffle currently going for the following prize: '" + str(currentPrize) +
                                    "'. Get your tickets in by using the !buytickets command. Everyone gets one free"
                                    " entry! Keep watching the stream, and you'll earn more points to spend on tickets!")
@@ -1498,10 +1673,10 @@ class Bot(commands.Bot, ABC):  # set up the bot
             print(f"The error '{e}' occurred")
         return connection
 
-    def execute_query(self, connection, query, *args):
+    def execute_write_query(self, connection, query, *args):
         cursor = connection.cursor()
         try:
-            cursor.execute(query, args)
+            cursor.execute(query, *args)
             connection.commit()
             # print("Query executed successfully")
         except Error as e:
@@ -1511,32 +1686,33 @@ class Bot(commands.Bot, ABC):  # set up the bot
         cursor = connection.cursor()
         result = None
         try:
-            cursor.execute(query, args)
+            cursor.execute(query, *args)
             result = cursor.fetchall()
             return result
-        except Error as e:
-            print(f"The error '{e}' occurred")
-
-    def execute_pointsDB_read_query(self, connection, query, viewerName):
-        cursor = connection.cursor()
-        result = None
-        try:
-            cursor.execute(query, viewerName)
-            result = cursor.fetchall()
-            return result
-        except Error as e:
-            print(f"The error '{e}' occurred")
-
-    def execute_pointsDB_write_query(self, connection, query, values):
-        cursor = connection.cursor()
-        try:
-            cursor.execute(query, values)
-            connection.commit()
-            # print("Query executed successfully")
         except Error as e:
             print(f"The error '{e}' occurred")
 
     # VARIABLES Section ================================================================================================
+
+    def constantsLookup(self):
+        defaultConstantsDict = {
+            "pointsPerMinute": 10,
+            "raffleTicketCost": 500,
+            "raffleMaxTickets": 100
+        }
+        dbConnection = sqlite3.connect(".\\TwitchBot.sqlite")
+        selectConstants = "SELECT * from Constants " \
+                          "INNER JOIN ChannelList cl USING(channelID)"
+        constants = self.execute_read_query(dbConnection, selectConstants)
+        if constants:
+            # updating
+            for constantsRow in constants:
+                newConstantsDict = dict(defaultConstantsDict)
+                newConstantsDict["pointsPerMinute"] = constantsRow[2]
+                newConstantsDict["raffleTicketCost"] = constantsRow[3]
+                newConstantsDict["raffleMaxTickets"] = constantsRow[4]
+                self.constantsDict.update({constantsRow[5]: newConstantsDict})
+            print(self.constantsDict)
 
     botStarted = 0
     pizzaLastTime = 0
@@ -1550,22 +1726,12 @@ class Bot(commands.Bot, ABC):  # set up the bot
     bitWarDonations = ["", ]
 
     raffleObject = Raffle()
-    pointsPerMinute = 10
-    raffleTicketCost = 500
-    pointsConnection = sqlite3.connect(".\\points.sqlite")
-    select_constants = "SELECT * from Constants"
-    cursor = pointsConnection.cursor()
-    cursor.execute(select_constants)
-    constants = cursor.fetchall()
-    if constants:
-        # updating
-        for constantsRow in constants:
-            pointsPerMinute = constantsRow[2]
-            print("PPM: " + str(pointsPerMinute))
-            raffleTicketCost = constantsRow[3]
-            print("tickets: " + str(raffleTicketCost))
+
+    constantsDict = {}
 
     NVD = NootVsDoot()
+
+    raidList = []
 
 
 if __name__ == "__main__":

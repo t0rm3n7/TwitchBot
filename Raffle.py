@@ -1,113 +1,150 @@
 import random
 import sqlite3
 from sqlite3 import Error
-import ast
 import pickle
 
 
 class Raffle:
-    ticketList = list([])
-    print(ticketList)
-    active = False
-    prize = ""
+    defaultRaffleDict = {
+        "channel": "",
+        "tickets": [],
+        "prize": "",
+        "active": False
+    }
+    raffleDict = {}
+    print(raffleDict)
 
     def __init__(self):
         print("raffle init")
 
     def open_raffle(self, channelName, rafflePrize):
         self.close_raffle(channelName)
-        self.prize = rafflePrize
-        pointsConnection = sqlite3.connect(".\\points.sqlite")
-        select_raffle = "SELECT * from Raffle where channel = '" + channelName + "'"
-        raffleBits = self.execute_read_query(pointsConnection, select_raffle)
+        newRaffleDict = dict(self.defaultRaffleDict)
+        newRaffleDict["channel"] = channelName
+        newRaffleDict["prize"] = rafflePrize
+        self.raffleDict.update({channelName: newRaffleDict})
+        dbConnection = sqlite3.connect(".\\TwitchBot.sqlite")
+        select_raffle = "SELECT * FROM Raffle " \
+                        "INNER JOIN ChannelList cl USING(channelID) " \
+                        "WHERE cl.channelName = ?"
+        raffleBits = self.execute_read_query(dbConnection, select_raffle, (channelName, ))
         if not raffleBits:
-            arguments = (channelName, rafflePrize, pickle.dumps(self.ticketList).hex())
-            insert_raffle = "INSERT into Raffle (channel,prize,array) VALUES (?,?,?)"
-            self.execute_query(pointsConnection, insert_raffle, arguments)
-            self.active = True
+            arguments = (channelName, rafflePrize, pickle.dumps([]).hex())
+            insert_raffle = "INSERT into Raffle (channelID,prize,array) VALUES (?,?,?)"
+            self.execute_write_query(dbConnection, insert_raffle, arguments)
+            self.raffleDict[channelName]["active"] = True
         elif raffleBits:
-            arguments = (rafflePrize, pickle.dumps(self.ticketList).hex())
-            update_raffle = "UPDATE Raffle SET prize = ?, array = ? where channel = '" + channelName + "'"
-            self.execute_query(pointsConnection, update_raffle, arguments)
-            self.active = True
+            raffleID = raffleBits[0][0]
+            arguments = (rafflePrize, pickle.dumps([]).hex(), raffleID)
+            update_raffle = "UPDATE Raffle SET prize = ?, array = ? where raffleID = ?"
+            self.execute_write_query(dbConnection, update_raffle, arguments)
+            self.raffleDict[channelName]["active"] = True
         else:
             print("raffle shouldn't be active")
 
     def load_raffle(self, channelName):
-        pointsConnection = sqlite3.connect(".\\points.sqlite")
-        select_raffle = "SELECT * from Raffle where channel = '" + channelName + "'"
-        raffleBits = self.execute_read_query(pointsConnection, select_raffle)
-        if raffleBits:
-            for raffleRow in raffleBits:
-                if raffleRow[2]:
-                    self.prize = raffleRow[2]
-                    self.ticketList = pickle.loads(bytes.fromhex(raffleRow[3]))
-                    self.active = True
-                    return self.prize
-                else:
-                    return None
+        if channelName not in self.raffleDict.keys():
+            dbConnection = sqlite3.connect(".\\TwitchBot.sqlite")
+            select_raffle = "SELECT * FROM Raffle " \
+                            "INNER JOIN ChannelList cl USING(channelID) " \
+                            "WHERE cl.channelName = ?"
+            raffleBits = self.execute_read_query(dbConnection, select_raffle, (channelName, ))
+            if raffleBits:
+                for raffleRow in raffleBits:
+                    if raffleRow[2]:
+                        newRaffleDict = dict(self.defaultRaffleDict)
+                        newRaffleDict["channel"] = channelName
+                        newRaffleDict["tickets"] = pickle.loads(bytes.fromhex(raffleRow[3]))
+                        newRaffleDict["prize"] = raffleRow[2]
+                        newRaffleDict["active"] = True
+                        self.raffleDict.update({channelName: newRaffleDict})
+                        return self.raffleDict[channelName]["active"]
+                    else:
+                        return None
 
     def add_tickets(self, channelName, username, numTickets):
         viewerName = str(username)
         for ticket in range(numTickets):
-            self.ticketList.append(viewerName)
-        print(self.ticketList)
-        pointsConnection = sqlite3.connect(".\\points.sqlite")
-        update_raffle = "UPDATE Raffle SET array = ? where channel = '" + channelName + "'"
-        self.execute_query(pointsConnection, update_raffle, (pickle.dumps(self.ticketList).hex(),))
-        return self.list_tickets(viewerName)
+            self.raffleDict[channelName]["tickets"].append(viewerName)
+        print(self.raffleDict[channelName]["tickets"])
+        dbConnection = sqlite3.connect(".\\TwitchBot.sqlite")
+        select_raffle = "SELECT * FROM Raffle " \
+                        "INNER JOIN ChannelList cl USING(channelID) " \
+                        "WHERE cl.channelName = ?"
+        raffleBits = self.execute_read_query(dbConnection, select_raffle, (channelName,))
+        if raffleBits:
+            raffleID = raffleBits[0][0]
+            update_raffle = "UPDATE Raffle SET array = ? where raffleID = ?"
+            self.execute_write_query(dbConnection, update_raffle,
+                                     (pickle.dumps(self.raffleDict[channelName]["tickets"]).hex(), raffleID))
+            return self.list_tickets(channelName, viewerName)
 
     def draw_winner(self, channelName):
-        if len(self.ticketList) < 1:
+        if len(self.raffleDict[channelName]["tickets"]) < 1:
             return None
         else:
-            winningTicket = random.randrange(0, len(self.ticketList))
-            winner = self.ticketList[winningTicket]
-            self.active = False
-            self.prize = ""
-            self.remove_tickets(winner)
+            winningTicket = random.randrange(0, len(self.raffleDict[channelName]["tickets"]))
+            winner = self.raffleDict[channelName]["tickets"][winningTicket]
+            self.raffleDict[channelName]["active"] = False
+            self.raffleDict[channelName]["prize"] = ""
+            self.remove_tickets(channelName, winner)
             return winner
 
-    def is_active(self):
-        return self.active
+    def is_active(self, channelName):
+        return self.raffleDict[channelName]["active"]
 
-    def what_prize(self):
-        return self.prize
+    def what_prize(self, channelName):
+        return self.raffleDict[channelName]["prize"]
 
-    def in_list(self, username):
-        if username in self.ticketList:
+    def in_list(self, channelName, username):
+        if username in self.raffleDict[channelName]["tickets"]:
             return True
         else:
             return False
 
-    def list_tickets(self, username):
+    def list_tickets(self, channelName, username):
         ticketTotal = 0
-        for ticket in self.ticketList:
+        for ticket in self.raffleDict[channelName]["tickets"]:
             if ticket == username:
                 ticketTotal += 1
         return ticketTotal
 
     def update_prize(self, channelName, rafflePrize):
-        self.prize = rafflePrize
-        pointsConnection = sqlite3.connect(".\\points.sqlite")
-        update_raffle = "UPDATE Raffle SET prize = ? where channel = '" + channelName + "'"
-        self.execute_query(pointsConnection, update_raffle, (rafflePrize,))
+        self.raffleDict[channelName]["prize"] = rafflePrize
+        dbConnection = sqlite3.connect(".\\TwitchBot.sqlite")
+        select_raffle = "SELECT raffleID FROM Raffle " \
+                        "INNER JOIN ChannelList cl USING(channelID) " \
+                        "WHERE cl.channelName = ?"
+        raffleBits = self.execute_read_query(dbConnection, select_raffle, (channelName,))
+        if raffleBits:
+            raffleID = raffleBits[0][0]
+            update_raffle = "UPDATE Raffle SET prize = ? where raffleID = ?"
+            self.execute_write_query(dbConnection, update_raffle, (rafflePrize, raffleID))
 
     def close_raffle(self, channelName):
-        self.active = False
-        self.prize = ""
-        self.ticketList = list([])
-        pointsConnection = sqlite3.connect(".\\points.sqlite")
-        update_raffle = "UPDATE Raffle SET prize = ?, array = ? where channel = '" + channelName + "'"
-        self.execute_query(pointsConnection, update_raffle, (self.prize, pickle.dumps(self.ticketList).hex()))
+        self.raffleDict[channelName]["active"] = False
+        self.raffleDict[channelName]["prize"] = ""
+        self.raffleDict[channelName]["tickets"] = list([])
+        dbConnection = sqlite3.connect(".\\TwitchBot.sqlite")
+        select_raffle = "SELECT raffleID FROM Raffle " \
+                        "INNER JOIN ChannelList cl USING(channelID) " \
+                        "WHERE cl.channelName = ?"
+        raffleBits = self.execute_read_query(dbConnection, select_raffle, (channelName,))
+        if raffleBits:
+            raffleID = raffleBits[0][0]
+            update_raffle = "UPDATE Raffle SET prize = ?, array = ? where raffleID = ?"
+            self.execute_write_query(dbConnection, update_raffle,
+                                     (self.raffleDict[channelName]["prize"],
+                                      pickle.dumps(self.raffleDict[channelName]["tickets"]).hex()),
+                                     raffleID)
 
-    def get_total_tickets(self):
-        return len(self.ticketList)
+    def get_total_tickets(self, channelName):
+        return len(self.raffleDict[channelName]["tickets"])
 
-    def remove_tickets(self, username):
-        for ticket in self.ticketList:
+    def remove_tickets(self, channelName, username):
+        for ticket in self.raffleDict[channelName]["tickets"]:
             if ticket == username:
-                self.ticketList.remove(username)
+                self.raffleDict[channelName]["tickets"].remove(username)
 
     def create_connection(self, path):
         connection = None
@@ -118,20 +155,20 @@ class Raffle:
             print(f"The error '{e}' occurred")
         return connection
 
-    def execute_query(self, connection, query, args):
+    def execute_write_query(self, connection, query, *args):
         cursor = connection.cursor()
         try:
-            cursor.execute(query, args)
+            cursor.execute(query, *args)
             connection.commit()
             # print("Query executed successfully")
         except Error as e:
             print(f"The error '{e}' occurred")
 
-    def execute_read_query(self, connection, query):
+    def execute_read_query(self, connection, query, *args):
         cursor = connection.cursor()
         result = None
         try:
-            cursor.execute(query)
+            cursor.execute(query, *args)
             result = cursor.fetchall()
             return result
         except Error as e:
