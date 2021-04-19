@@ -266,9 +266,9 @@ class BidWar:
                 teamTotal = team[1]
                 teamsMessage = teamsMessage + " #" + teamName + ": " + str(teamTotal) + ","
             if teamsMessage == "":
-                returnMessage = returnMessage + "| No Teams have been added!"
+                returnMessage = returnMessage + " | No Teams have been added!"
             else:
-                returnMessage = returnMessage + "| Current Team Totals:" + teamsMessage.rstrip(",")
+                returnMessage = returnMessage + " | Current Team Totals:" + teamsMessage.rstrip(",")
             return returnMessage
         else:
             return "There is not a Bid War for this channel currently running."
