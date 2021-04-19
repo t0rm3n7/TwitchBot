@@ -67,7 +67,7 @@ class BidWar:
             selectBidWar = "SELECT * FROM BidWarList " \
                            "INNER JOIN ChannelList cl USING(channelID) " \
                            "WHERE cl.channelName = ? AND bidWarName = ?"
-            bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (channelName,))
+            bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (channelName, bidWarName))
             if bidWarList:
                 # if present, cache and set to active
                 newBidWarDict = dict(self.defaultBidWarDict)
@@ -98,7 +98,7 @@ class BidWar:
                            "'!warinfo' for more information about the Bid War. You can add Teams using the '!war add " \
                            "team' command!"
             else:
-                # if not, add to DB
+                # if not, add to DB and cache the new bid war
                 selectChannel = "SELECT channelID FROM ChannelList " \
                                 "WHERE channelName = ?"
                 channelList = self.execute_read_query(self.dbConnection, selectChannel, (channelName,))
@@ -107,9 +107,24 @@ class BidWar:
                     insertBidWar = "INSERT INTO BidWarList (channelID, bidWarName, active) " \
                                    "VALUES (?, ?, ?)"
                     self.execute_write_query(self.dbConnection, insertBidWar, (channelID, bidWarName, "True"))
-                    return "Bid War started! You can add Teams using the '!war add team' command, and make sure to " \
-                           "use the '!war desc' command to set a description to use when the '!warinfo' command is " \
-                           "used!"
+                    selectBidWar = "SELECT * FROM BidWarList " \
+                                   "WHERE channelID = ? AND bidWarName = ?"
+                    bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (channelID, bidWarName))
+                    if bidWarList:
+                        newBidWarDict = dict(self.defaultBidWarDict)
+                        newBidWarDict["bidWarID"] = bidWarList[0][0]
+                        newBidWarDict["channelID"] = bidWarList[0][1]
+                        newBidWarDict["name"] = bidWarList[0][2]
+                        newBidWarDict["active"] = bidWarList[0][3]
+                        newBidWarDict["text"] = bidWarList[0][4]
+                        self.bidWarDict.update({channelName: newBidWarDict})
+                        return "Bid War started! You can add Teams using the '!war add team' command, and make sure to " \
+                               "use the '!war desc' command to set a description to use when the '!warinfo' command is " \
+                               "used!"
+                    else:
+                        return "Unable to add new Bid War to database. Please check with t0rm3n7."
+                else:
+                    print("no channel id found for " + channelName)
 
     def disableBidWar(self, channelName):
         # set current bid war to inactive in DB, then clear cache
@@ -232,9 +247,9 @@ class BidWar:
                 updateTeam = "UPDATE BidWarTeamList SET teamTotal = ? WHERE bidWarID = ? AND teamName = ?"
                 self.execute_write_query(self.dbConnection, updateTeam, (newTotal, bidWarID, teamName))
                 if amount > 0:
-                    return "Added " + amount + " points to Team " + teamName + "."
+                    return "Added " + str(amount) + " points to Team " + teamName + "."
                 elif amount < 0:
-                    return "Removed " + amount + " points from Team " + teamName + "."
+                    return "Removed " + str(amount) + " points from Team " + teamName + "."
             else:
                 return "Team " + teamName + " not present in Bid War."
         else:
@@ -280,7 +295,7 @@ class BidWar:
             return returnMessage
         else:
             # no rows found
-            return "No Bid Wars found. You can start one with the '!war on' command."
+            return "No Bid Wars found. You can start one with the '!war start' command."
 
     def renameBidWar(self, channelName, bidWarName):
         # changing the active Bid War's name in the DB
@@ -309,7 +324,9 @@ class BidWar:
                            "SET displayText = ? " \
                            "WHERE bidWarID = ?"
             self.execute_write_query(self.dbConnection, updateBidWar, (description, bidWarID))
-            selectBidWar = "SELECT displayText FROM BidWarText WHERE bidWarID = ?"
+            selectBidWar = "SELECT displayText " \
+                           "FROM BidWarList " \
+                           "WHERE bidWarID = ?"
             bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (bidWarID, ))
             if bidWarList[0][0] == description:
                 self.bidWarDict[channelName]["text"] = description

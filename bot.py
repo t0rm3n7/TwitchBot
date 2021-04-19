@@ -417,7 +417,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
                             bidWarName = warList[2]
                             chatMessage = self.BidWarObject.deleteBidWar(channelName, bidWarName)
                             await ctx.channel.send(chatMessage)
-                elif warCommand == "team":
+                elif warCommand == "team" or warCommand == "teams":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" \
                             or ctx.author.is_mod:
                         if len(numSpaces) < 3:
@@ -495,9 +495,12 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     @commands.command(name='warinfo')
     async def warinfo(self, ctx):
-        chatMessage = self.BidWarObject.bidWarDict[ctx.channel.name]["text"]
-        await ctx.channel.send(chatMessage)
-        await self.bidWarCheck(ctx)
+        if self.BidWarObject.is_active(ctx.channel.name):
+            chatMessage = self.BidWarObject.bidWarDict[ctx.channel.name]["text"]
+            await ctx.channel.send(chatMessage)
+            await self.bidWarCheck(ctx)
+        else:
+            await ctx.channel.send("There is no Bid War currently running.")
 
     # NOOT vs DOOT section =============================================================================================
     @commands.command(name='noot')
