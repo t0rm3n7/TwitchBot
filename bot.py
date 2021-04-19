@@ -10,8 +10,8 @@ import LiveCheck
 import functools
 import re
 from Raffle import Raffle
-import pickle
 from NootVsDoot import NootVsDoot
+from BidWar import BidWar
 
 timer = 0
 notmemes = [
@@ -77,6 +77,7 @@ class Bot(commands.Bot, ABC):  # set up the bot
             await asyncio.start_server(
                 self.OAuthListener, host="localhost", port=28888, start_serving=True)
             self.NVD.autoActivate(os.environ['CHANNEL'])
+            self.BidWarObject.autoActivate(os.environ['CHANNEL'])
             if self.NVD.active:
                 self.loop.call_later(600, asyncio.create_task, self.NvDTimer())
             self.botStarted = 1
@@ -286,8 +287,10 @@ class Bot(commands.Bot, ABC):  # set up the bot
 
     @commands.command(name='king')
     async def king(self, ctx):
-        dbConnection = self.create_connection(".\\points.sqlite")
-        selectNoun = "SELECT noun FROM Nouns ORDER BY RANDOM() LIMIT 1;"
+        dbConnection = self.create_connection(".\\TwitchBot.sqlite")
+        selectNoun = "SELECT noun " \
+                     "FROM Nouns " \
+                     "ORDER BY RANDOM() LIMIT 1;"
         nounRaw = self.execute_read_query(dbConnection, selectNoun)
         await ctx.channel.send(nounRaw[0][0].rstrip().title() + " of the King!")
 
@@ -356,15 +359,23 @@ class Bot(commands.Bot, ABC):  # set up the bot
             "Gilder has a Nexus.gg store, where you can buy games and a bit goes back to Gilder! Visit "
             "https://www.nexus.gg/Gildersneeze to view his promoted games and buy if you like!")
 
+    @commands.command(name='wastenauts')
+    async def wastenauts(self, ctx):
+        await ctx.channel.send(
+            "Wastenauts is a Co-op Deckbuilder game currently in development! Visit "
+            "https://www.kickstarter.com/projects/razburygames/wastenauts for more information on Wastenauts!")
+
     # BIT WAR section ==================================================================================================
     @commands.command(name='war')
     async def war(self, ctx):
         if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" or ctx.author.is_mod:
             numSpaces = re.findall(" ", ctx.content)
+            channelName = ctx.channel.name.lower()
             if len(numSpaces) < 1:
                 await ctx.channel.send(
-                    "Example usage: '!war start', '!war on', '!war off', '!war delete', '!war team', and '!war bits'/"
-                    "'!war tips'. Please use the commands as listed to see more info on how to use them.")
+                    "Example usage: '!war start', '!war stop', '!war decision', '!war delete', '!war team', '!war bits'"
+                    "/'!war tips', '!war list', '!war rename', and '!war text'. Please use the commands as listed to "
+                    "see more info on how to use them.")
             else:
                 warList = re.split(" ", ctx.content, 2)
                 warCommand = warList[1].lower()
@@ -373,153 +384,39 @@ class Bot(commands.Bot, ABC):  # set up the bot
                         if len(numSpaces) < 2:
                             await ctx.channel.send(
                                 "Example usage: '!war start Waifu in Portia' will setup a bid war for 'Waifu in "
-                                "Portia'.")
+                                "Portia' or turn it on if it's already been created previously.")
                         else:
-                            if self.bitWarActive is True:
-                                await ctx.channel.send(
-                                    "There is an active bid war already in progress. Please turn off the current bid "
-                                    "war to start a new one.")
-                            else:
-                                warSubCommand = warList[2]
-                                # add to DB if warSubCommand (bit war name) isn't already present
-                                dbConnection = sqlite3.connect(".\\points.sqlite")
-                                selectBitWar = "SELECT * from BitWars where channelName = ? AND bitWarName = ?"
-                                bitWarLookup = self.execute_read_query(
-                                    dbConnection, selectBitWar, (ctx.channel.name, warSubCommand))
-                                if bitWarLookup:
-                                    # Bit War exists
-                                    await ctx.channel.send(
-                                        ctx.author.name + ", this bid war already exists. "
-                                        "Please open it using the command '!war on " + warSubCommand + "'")
-                                else:
-                                    # Bit war doesn't exist, insert new row into DB
-                                    self.bitWarActive = True
-                                    self.bitWarName = str(warSubCommand)
-                                    self.bitWarTeams = list()
-                                    self.bitWarDonations = list()
-                                    convertedTeams = pickle.dumps(self.bitWarTeams).hex()
-                                    convertedTotals = pickle.dumps(self.bitWarDonations).hex()
-                                    dbConnection = sqlite3.connect(".\\points.sqlite")
-                                    insertBitWar = "INSERT into BitWars " \
-                                                   "(channelName, bitWarName, donationTeams, donationTotals) " \
-                                                   "VALUES (?,?,?,?)"
-                                    self.execute_write_query(
-                                        dbConnection, insertBitWar,
-                                        (ctx.channel.name, self.bitWarName, convertedTeams, convertedTotals))
-                                    await ctx.channel.send(
-                                        ctx.author.name + " has started a bid war for " + str(warSubCommand) + ". "
-                                        "This bid war is now open, but will need to have the teams populated with "
-                                        "'!war team add'. To check the status, use the command '!bidwar' in chat!")
-                elif warCommand == "on":
-                    if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
-                        if len(numSpaces) < 2:
-                            await ctx.channel.send("Example usage: '!war on Waifu in Portia' will start up the bid "
-                                                   "war for 'Waifu in Portia'.")
-                        else:
-                            if self.bitWarActive is True:
-                                await ctx.channel.send(
-                                    "There is an active bid war already in progress. Please turn off the current bid "
-                                    "war to start a new one.")
-                            else:
-                                warSubCommand = warList[2]
-                                # lookup values from DB to bring into memory
-                                dbConnection = sqlite3.connect(".\\points.sqlite")
-                                selectBitWar = "SELECT * from BitWars where channelName = ? AND bitWarName = ?"
-                                bitWarLookup = self.execute_read_query(
-                                    dbConnection, selectBitWar, (ctx.channel.name, warSubCommand))
-                                if bitWarLookup:
-                                    # Bit War exists
-                                    self.bitWarActive = True
-                                    self.bitWarName = str(warSubCommand)
-                                    if bitWarLookup[0][3]:
-                                        self.bitWarTeams = pickle.loads(bytes.fromhex(bitWarLookup[0][3]))
-                                    else:
-                                        self.bitWarTeams = list()
-                                    if bitWarLookup[0][4]:
-                                        self.bitWarDonations = pickle.loads(bytes.fromhex(bitWarLookup[0][4]))
-                                    else:
-                                        self.bitWarDonations = list()
-                                    await ctx.channel.send(
-                                        "Bid War for " + str(warSubCommand) + " is now open. All bits/tips will now "
-                                        "be added to the current bid war, as long as you use a hashtag for the team "
-                                        "you want to win. To check the status, use the command '!bidwar' in chat!")
-                                    await self.bitWarCheck(ctx)
-                                else:
-                                    # Bit War isn't in database
-                                    await ctx.channel.send(
-                                        ctx.author.name + ", that bid war doesn't exist! Please create it using the "
-                                        "command '!war start " + warSubCommand + "'")
-                elif warCommand == "off":
+                            bidWarName = warList[2]
+                            chatMessage = self.BidWarObject.enableBidWar(channelName, bidWarName)
+                            await ctx.channel.send(chatMessage)
+                            await self.bidWarCheck(ctx)
+                elif warCommand == "stop":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
                         if len(numSpaces) != 1:
                             await ctx.channel.send(
-                                "Example usage: '!war off' will turn off the currently active bid war.")
+                                "Example usage: '!war stop' will turn off the currently active bid war.")
                         else:
-                            if self.bitWarActive is False:
-                                await ctx.channel.send(
-                                    "There is no active bid war to turn off! Example usage: '!war off' will turn off "
-                                    "the currently active bid war.")
-                            else:
-                                # make a final write to the DB to ensure saved data before clearing memory
-                                dbConnection = sqlite3.connect(".\\points.sqlite")
-                                selectBitWar = "SELECT * FROM BitWars " \
-                                               "WHERE channelName = ? AND bitWarName = ?"
-                                bitWarLookup = self.execute_read_query(
-                                    dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
-                                if bitWarLookup:
-                                    # Bid War exists so update it
-                                    cachedName = str(self.bitWarName)
-                                    convertedTeams = pickle.dumps(self.bitWarTeams).hex()
-                                    convertedTotals = pickle.dumps(self.bitWarDonations).hex()
-                                    updateBitWar = "UPDATE BitWars " \
-                                                   "SET donationTeams = ?, donationTotals = ?" \
-                                                   "WHERE channelName = ? AND bitWarName = ? "
-                                    self.execute_write_query(
-                                        dbConnection, updateBitWar,
-                                        (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
-                                    self.bitWarActive = False
-                                    self.bitWarName = ""
-                                    self.bitWarTeams = list()
-                                    self.bitWarDonations = list()
-                                    await ctx.channel.send("Bid War for " + str(cachedName) + " is now closed.")
-                                else:
-                                    await ctx.channel.send(
-                                        "I have no idea how you got to this point, but something probably broke. No "
-                                        "SQL row was found for the current bid war. Please let t0rm3n7 know. :|")
+                            chatMessage = self.BidWarObject.disableBidWar(channelName)
+                            await ctx.channel.send(chatMessage)
+                elif warCommand == "decision":
+                    if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
+                        if len(numSpaces) != 1:
+                            await ctx.channel.send(
+                                "Example usage: '!war decision' will decide the victor and close the current bid war. "
+                                "This will wipe the totals from the database, so only use it when you're ready to "
+                                "decide the winner!")
+                        else:
+                            chatMessage = self.BidWarObject.declareWinner(channelName)
+                            await ctx.channel.send(chatMessage)
                 elif warCommand == "delete":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
                         if len(numSpaces) < 2:
                             await ctx.channel.send("Example usage: '!war delete Waifu in Portia' will delete the "
                                                    "bid war 'Waifu in Portia' and remove it from the database.")
                         else:
-                            warSubCommand = warList[2]
-                            # delete the bit war from DB
-                            dbConnection = sqlite3.connect(".\\points.sqlite")
-                            selectBitWar = "SELECT * FROM BitWars " \
-                                           "WHERE channelName = ? AND bitWarName = ?"
-                            bitWarLookup = self.execute_read_query(
-                                dbConnection, selectBitWar, (ctx.channel.name, warSubCommand))
-                            if bitWarLookup:
-                                # Bit War exists so delete it
-                                deleteBitWar = "DELETE FROM BitWars " \
-                                               "WHERE channelName = ? AND bitWarName = ?"
-                                self.execute_write_query(
-                                    dbConnection, deleteBitWar, (ctx.channel.name, warSubCommand))
-                                if self.bitWarActive and self.bitWarName == warSubCommand:
-                                    self.bitWarActive = False
-                                    self.bitWarName = ""
-                                    self.bitWarTeams = list()
-                                    self.bitWarDonations = list()
-                                    await ctx.channel.send(
-                                        "Bid War for " + str(warSubCommand) + " has been turned off and removed from "
-                                        "the database.")
-                                else:
-                                    await ctx.channel.send(
-                                        "Bid War for " + str(warSubCommand) + " has been removed from the database.")
-                            else:
-                                # Bit War doesn't exist in database
-                                await ctx.channel.send(
-                                    "Bid War for " + str(warSubCommand) + " doesn't exist in database to delete.")
+                            bidWarName = warList[2]
+                            chatMessage = self.BidWarObject.deleteBidWar(channelName, bidWarName)
+                            await ctx.channel.send(chatMessage)
                 elif warCommand == "team":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" \
                             or ctx.author.is_mod:
@@ -528,174 +425,79 @@ class Bot(commands.Bot, ABC):  # set up the bot
                                                    "currently active bid war. '!war team remove Emily' will remove "
                                                    "Emily from the currently active bid war.")
                         else:
-                            if self.bitWarActive is False:
-                                await ctx.channel.send("There is no active bid war for which to modify the teams!")
+                            warList = re.split(" ", ctx.content, 3)
+                            warSubCommand = warList[2]
+                            warString = warList[3]
+                            if warSubCommand == "add" or warSubCommand == "remove":
+                                chatMessage = self.BidWarObject.teamManipulation(channelName, warString, warSubCommand)
+                                await ctx.channel.send(chatMessage)
                             else:
-                                warList = re.split(" ", ctx.content, 3)
-                                warSubCommand = warList[2]
-                                warString = warList[3]
-                                if warSubCommand == "add":
-                                    # update the team info in memory, then update the DB
-                                    self.bitWarTeams.append(warString)
-                                    self.bitWarDonations.append(0)
-                                    convertedTeams = pickle.dumps(self.bitWarTeams).hex()
-                                    convertedTotals = pickle.dumps(self.bitWarDonations).hex()
-                                    dbConnection = sqlite3.connect(".\\points.sqlite")
-                                    selectBitWar = "SELECT * FROM BitWars " \
-                                                   "WHERE channelName = ? AND bitWarName = ?"
-                                    bitWarLookup = self.execute_read_query(
-                                        dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
-                                    if bitWarLookup:
-                                        # Bit War exists so update it
-                                        updateBitWar = "UPDATE BitWars " \
-                                                       "SET donationTeams = ?, donationTotals = ?" \
-                                                       "WHERE channelName = ? AND bitWarName = ? "
-                                        self.execute_write_query(
-                                            dbConnection, updateBitWar,
-                                            (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
-                                        await ctx.channel.send(
-                                            "Added the #" + str(warString) + " team to the " + str(self.bitWarName) +
-                                            " bid war.")
-                                    else:
-                                        # Bit War doesn't exist in database
-                                        await ctx.channel.send(
-                                            "Bid War for " + str(self.bitWarName) + " doesn't exist in database to "
-                                            "update.")
-                                elif warSubCommand == "remove":
-                                    # update the team info in memory, then update the DB
-                                    index = self.bitWarTeams.index(warString)
-                                    self.bitWarTeams.pop(index)
-                                    self.bitWarDonations.pop(index)
-                                    convertedTeams = pickle.dumps(self.bitWarTeams).hex()
-                                    convertedTotals = pickle.dumps(self.bitWarDonations).hex()
-                                    dbConnection = sqlite3.connect(".\\points.sqlite")
-                                    selectBitWar = "SELECT * FROM BitWars " \
-                                                   "WHERE channelName = ? AND bitWarName = ?"
-                                    bitWarLookup = self.execute_read_query(
-                                        dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
-                                    if bitWarLookup:
-                                        # Bid War exists so update it
-                                        updateBitWar = "UPDATE BitWars " \
-                                                       "SET donationTeams = ?, donationTotals = ?" \
-                                                       "WHERE channelName = ? AND bitWarName = ? "
-                                        self.execute_write_query(
-                                            dbConnection, updateBitWar,
-                                            (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
-                                        await ctx.channel.send(
-                                            "Removed the #" + str(warString) + " team from the " + str(self.bitWarName)
-                                            + " bid war.")
-                                    else:
-                                        # Bid War doesn't exist in database
-                                        await ctx.channel.send(
-                                            "Bid War for " + str(self.bitWarName) + " doesn't exist in database to "
-                                            "update.")
+                                await ctx.channel.send("Example usage: '!war team add Emily' will add Emily to the "
+                                                       "currently active bid war. '!war team remove Emily' will remove "
+                                                       "Emily from the currently active bid war.")
                 elif warCommand == "bits" or warCommand == "tip" or warCommand == "bit" or warCommand == "tips":
                     if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7" \
                             or ctx.author.is_mod:
                         if len(numSpaces) < 3:
                             await ctx.channel.send(
-                                "Example usage: '!war " + warCommand + " add Emily 667' will add $6.67 or 667 bits to "
-                                "the total amount for Team Emily. '!war " + warCommand + " subtract Emily 420' will "
+                                "Example usage: '!war " + warCommand + " Emily 667' will add $6.67 or 667 bits to "
+                                "the total amount for Team Emily. '!war " + warCommand + " Emily -420' will "
                                 "remove $4.20 or 420 bits from the total amount for Team Emily.")
                         else:
-                            if self.bitWarActive is False:
-                                await ctx.channel.send("There is no active bid war for which to adjust the donation "
-                                                       "totals!")
-                            else:
-                                warList = re.split(" ", ctx.content, 4)
-                                warSubCommand = warList[2]
-                                warName = warList[3]
-                                warAmount = warList[4]
-                                print(warSubCommand + ", " + warName + ", " + warAmount)
-                                if warAmount.isnumeric():
-                                    if warSubCommand == "add":
-                                        # update the team info in memory, then update the DB
-                                        index = self.bitWarTeams.index(warName)
-                                        self.bitWarDonations[index] += abs(int(warAmount))
-                                        convertedTeams = pickle.dumps(self.bitWarTeams).hex()
-                                        convertedTotals = pickle.dumps(self.bitWarDonations).hex()
-                                        dbConnection = sqlite3.connect(".\\points.sqlite")
-                                        selectBitWar = "SELECT * FROM BitWars " \
-                                                       "WHERE channelName = ? AND bitWarName = ?"
-                                        bitWarLookup = self.execute_read_query(
-                                            dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
-                                        if bitWarLookup:
-                                            # Bit War exists so update it
-                                            updateBitWar = "UPDATE BitWars " \
-                                                           "SET donationTeams = ?, donationTotals = ?" \
-                                                           "WHERE channelName = ? AND bitWarName = ? "
-                                            self.execute_write_query(
-                                                dbConnection, updateBitWar,
-                                                (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
-                                            await ctx.channel.send("Added " + str(warAmount) + " to the " +
-                                                                   str(warName) + " Team.")
-                                        else:
-                                            # Bit War doesn't exist in database
-                                            await ctx.channel.send(
-                                                "Bid War for " + str(self.bitWarName) +
-                                                " doesn't exist in database to update.")
-                                    elif warSubCommand == "subtract" or warSubCommand == "remove":
-                                        # update the team info in memory, then update the DB
-                                        index = self.bitWarTeams.index(warName)
-                                        self.bitWarDonations[index] -= abs(int(warAmount))
-                                        convertedTeams = pickle.dumps(self.bitWarTeams).hex()
-                                        convertedTotals = pickle.dumps(self.bitWarDonations).hex()
-                                        dbConnection = sqlite3.connect(".\\points.sqlite")
-                                        selectBitWar = "SELECT * FROM BitWars " \
-                                                       "WHERE channelName = ? AND bitWarName = ?"
-                                        bitWarLookup = self.execute_read_query(
-                                            dbConnection, selectBitWar, (ctx.channel.name, self.bitWarName))
-                                        if bitWarLookup:
-                                            # Bit War exists so update it
-                                            updateBitWar = "UPDATE BitWars " \
-                                                           "SET donationTeams = ?, donationTotals = ?" \
-                                                           "WHERE channelName = ? AND bitWarName = ? "
-                                            self.execute_write_query(
-                                                dbConnection, updateBitWar,
-                                                (convertedTeams, convertedTotals, ctx.channel.name, self.bitWarName))
-                                            await ctx.channel.send("Subtracted " + str(warAmount) + " from the " +
-                                                                   str(warName) + " Team.")
-                                        else:
-                                            # Bit War doesn't exist in database
-                                            await ctx.channel.send(
-                                                "Bid War for " + str(self.bitWarName) +
-                                                " doesn't exist in database to update.")
-                                else:
-                                    await ctx.channel.send(
-                                        "Example usage: '!war " + warCommand + " add Emily 667' will add $6.67 or 667 "
-                                        "bits to the total amount for Team Emily. '!war " + warCommand + " subtract "
-                                        "Emily 420' will remove $4.20 or 420 bits from the total amount for Team Emily.")
+                            warList = re.split(" ", ctx.content, 3)
+                            warName = warList[2]
+                            print(warName + ", " + warList[3])
+                            try:
+                                warAmount = int(warList[3])
+                                chatMessage = self.BidWarObject.totalManipulation(channelName, warName, warAmount)
+                                await ctx.channel.send(chatMessage)
+                            except ValueError:
+                                await ctx.channel.send(
+                                    "Example usage: '!war " + warCommand + " add Emily 667' will add $6.67 or 667 "
+                                    "bits to the total amount for Team Emily. '!war " + warCommand + " subtract "
+                                    "Emily 420' will remove $4.20 or 420 bits from the total amount for Team Emily.")
+                elif warCommand == "list":
+                    if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
+                        chatMessage = self.BidWarObject.listBidWar(channelName)
+                        await ctx.channel.send(chatMessage)
+                elif warCommand == "rename":
+                    if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
+                        if len(numSpaces) < 2:
+                            await ctx.channel.send(
+                                "Example usage: '!war rename Stardew Waifu' will rename the current Bid War to "
+                                "'Stardew Waifu'")
+                        else:
+                            bidWarName = warList[2]
+                            chatMessage = self.BidWarObject.renameBidWar(channelName, bidWarName)
+                            await ctx.channel.send(chatMessage)
+                elif warCommand == "text":
+                    if ctx.author.name.lower() == ctx.channel.name.lower() or ctx.author.name == "t0rm3n7":
+                        if len(numSpaces) < 2:
+                            await ctx.channel.send(
+                                "Example usage: '!war text <insert description here>' will give the bot a blurb to say"
+                                " about the active Bid War when someone enters in '!warinfo'")
+                        else:
+                            bidWarText = warList[2]
+                            chatMessage = self.BidWarObject.setBidWarDesc(channelName, bidWarText)
+                            await ctx.channel.send(chatMessage)
                 else:
                     await ctx.channel.send(
                         "Example usage: '!war start', '!war on', '!war off', '!war delete', '!war team', and '!war "
                         "bits'/'!war tips'. Please use the commands as listed to see more info on how to use them.")
 
-    @commands.command(name="bitwar", aliases=["bidwar", ])
-    async def bitwar(self, ctx):
-        await self.bitWarCheck(ctx)
+    @commands.command(name="bidwar")
+    async def bidwar(self, ctx):
+        await self.bidWarCheck(ctx)
 
-    async def bitWarCheck(self, ctx):
-        if self.bitWarActive is True:
-            teamTotalsList = "Current Bid War: " + self.bitWarName
-            if self.bitWarTeams:
-                teamTotalsList = teamTotalsList + ", Current Totals:"
-                for team in self.bitWarTeams:
-                    index = self.bitWarTeams.index(team)
-                    total = self.bitWarDonations[index]
-                    teamTotalsList = teamTotalsList + " #" + team + ": " + str(total) + ","
-                teamTotalsList = teamTotalsList.rstrip(",")
-            else:
-                teamTotalsList = teamTotalsList + ", but there are no teams for which to list totals!"
-            await ctx.channel.send(teamTotalsList)
-        else:
-            await ctx.channel.send("There is no active bid war at this time.")
+    async def bidWarCheck(self, ctx):
+        chatMessage = self.BidWarObject.bidWarStats(ctx.channel.name)
+        await ctx.channel.send(chatMessage)
 
     @commands.command(name='warinfo')
     async def warinfo(self, ctx):
-        await ctx.channel.send(
-            "There's a bid war to choose who we marry in Stardew Valley! Each penny or bit is one point! Just let "
-            "Gilder or a mod know who you'd like it to go toward in the tip message.")
-        await self.bitWarCheck(ctx)
+        chatMessage = self.BidWarObject.bidWarDict[ctx.channel.name]["text"]
+        await ctx.channel.send(chatMessage)
+        await self.bidWarCheck(ctx)
 
     # NOOT vs DOOT section =============================================================================================
     @commands.command(name='noot')
@@ -1720,16 +1522,13 @@ class Bot(commands.Bot, ABC):  # set up the bot
     timeLastTime = 0
     quoteLastTime = 0
 
-    bitWarActive = False
-    bitWarName = ""
-    bitWarTeams = ["", ]
-    bitWarDonations = ["", ]
-
     raffleObject = Raffle()
 
     constantsDict = {}
 
     NVD = NootVsDoot()
+
+    BidWarObject = BidWar()
 
     raidList = []
 

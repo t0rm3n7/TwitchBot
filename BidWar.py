@@ -35,29 +35,33 @@ class BidWar:
                        "t0rm3n7 know."
             else:
                 # Bid War is active in DB, cache it
-                newBidWarDict = dict(self.defaultBidWarDict)
-                newBidWarDict["bidWarID"] = bidWarList[0][0]
-                newBidWarDict["channelID"] = bidWarList[0][1]
-                newBidWarDict["name"] = bidWarList[0][2]
-                newBidWarDict["active"] = bidWarList[0][3]
-                newBidWarDict["text"] = bidWarList[0][4]
-                self.bidWarDict.update({channelName: newBidWarDict})
-                selectTeams = "SELECT * FROM BidWarTeamList " \
-                              "WHERE bidWarID = ?"
-                teamsList = self.execute_read_query(self.dbConnection, selectTeams, (newBidWarDict["bidWarID"],))
-                if teamsList:
-                    # found teams for bid war!
-                    for teamRow in teamsList:
-                        teamName = teamRow[2]
-                        teamTotal = teamRow[3]
-                        self.bidWarDict[channelName]["teams"].update({teamName: teamTotal})
-                    return "There is a Bid War currently running! Use '!warinfo' for more information about the " \
-                           "Bid War."
+                if bidWarList[0][2] == bidWarName:
+                    newBidWarDict = dict(self.defaultBidWarDict)
+                    newBidWarDict["bidWarID"] = bidWarList[0][0]
+                    newBidWarDict["channelID"] = bidWarList[0][1]
+                    newBidWarDict["name"] = bidWarList[0][2]
+                    newBidWarDict["active"] = bidWarList[0][3]
+                    newBidWarDict["text"] = bidWarList[0][4]
+                    self.bidWarDict.update({channelName: newBidWarDict})
+                    selectTeams = "SELECT * FROM BidWarTeamList " \
+                                  "WHERE bidWarID = ?"
+                    teamsList = self.execute_read_query(self.dbConnection, selectTeams, (newBidWarDict["bidWarID"],))
+                    if teamsList:
+                        # found teams for bid war!
+                        for teamRow in teamsList:
+                            teamName = teamRow[2]
+                            teamTotal = teamRow[3]
+                            self.bidWarDict[channelName]["teams"].update({teamName: teamTotal})
+                        return "There is a Bid War currently running! Use '!warinfo' for more information about the " \
+                               "Bid War."
+                    else:
+                        # no teams found for bid war
+                        return "There is a Bid War currently running, but no Teams have been set! Use '!warinfo' for " \
+                               "more information about the Bid War. You can add Teams using the '!war add team' " \
+                               "command!"
                 else:
-                    # no teams found for bid war
-                    return "There is a Bid War currently running, but no Teams have been set! Use '!warinfo' for " \
-                           "more information about the Bid War. You can add Teams using the '!war add team' " \
-                           "command!"
+                    return "Found an active Bid War in the database that does not match the one you've entered. " \
+                           "Please let t0rm3n7 know."
         else:
             # If none active, check if current name is in list of Bid Wars
             selectBidWar = "SELECT * FROM BidWarList " \
@@ -211,6 +215,8 @@ class BidWar:
                 else:
                     return "Had an issue removing Team " + teamName + " from the active Bid War. Please let t0rm3n7" \
                            " know."
+        else:
+            return "No active Bid War for which to modify the Teams."
 
     def totalManipulation(self, channelName, teamName, amount):
         # check for active Bid War
@@ -231,6 +237,8 @@ class BidWar:
                     return "Removed " + amount + " points from Team " + teamName + "."
             else:
                 return "Team " + teamName + " not present in Bid War."
+        else:
+            return "No active Bid War for which to modify the totals."
 
     def bidWarStats(self, channelName):
         # look up from cache
@@ -276,34 +284,40 @@ class BidWar:
 
     def renameBidWar(self, channelName, bidWarName):
         # changing the active Bid War's name in the DB
-        bidWarID = self.bidWarDict[channelName]["bidWarID"]
-        updateBidWar = "UPDATE BidWarList " \
-                       "SET bidWarName = ? " \
-                       "WHERE bidWarID = ?"
-        self.execute_write_query(self.dbConnection, updateBidWar, (bidWarName, bidWarID))
-        selectBidWar = "SELECT bidWarName FROM BidWarList " \
-                       "WHERE bidWarID = ?"
-        bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (bidWarID, ))
-        if bidWarList[0][0] == bidWarName:
-            self.bidWarDict[channelName]["name"] = bidWarName
-            return "Bid War Name successfully updated to " + bidWarName + "."
+        if channelName in self.bidWarDict.keys():
+            bidWarID = self.bidWarDict[channelName]["bidWarID"]
+            updateBidWar = "UPDATE BidWarList " \
+                           "SET bidWarName = ? " \
+                           "WHERE bidWarID = ?"
+            self.execute_write_query(self.dbConnection, updateBidWar, (bidWarName, bidWarID))
+            selectBidWar = "SELECT bidWarName FROM BidWarList " \
+                           "WHERE bidWarID = ?"
+            bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (bidWarID, ))
+            if bidWarList[0][0] == bidWarName:
+                self.bidWarDict[channelName]["name"] = bidWarName
+                return "Bid War Name successfully updated to " + bidWarName + "."
+            else:
+                return "Bid War Name failed to update in the database, please let t0rm3n7 know."
         else:
-            return "Bid War Name failed to update in the database, please let t0rm3n7 know."
+            return "No active Bid War, cannot rename."
 
     def setBidWarDesc(self, channelName, description):
         # set description for active bid war
-        bidWarID = self.bidWarDict[channelName]["bidWarID"]
-        updateBidWar = "UPDATE BidWarList " \
-                       "SET displayText = ? " \
-                       "WHERE bidWarID = ?"
-        self.execute_write_query(self.dbConnection, updateBidWar, (description, bidWarID))
-        selectBidWar = "SELECT displayText FROM BidWarText WHERE bidWarID = ?"
-        bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (bidWarID, ))
-        if bidWarList[0][0] == description:
-            self.bidWarDict[channelName]["text"] = description
-            return "Successfully updated the '!warinfo' text for the active Bid War!"
+        if channelName in self.bidWarDict.keys():
+            bidWarID = self.bidWarDict[channelName]["bidWarID"]
+            updateBidWar = "UPDATE BidWarList " \
+                           "SET displayText = ? " \
+                           "WHERE bidWarID = ?"
+            self.execute_write_query(self.dbConnection, updateBidWar, (description, bidWarID))
+            selectBidWar = "SELECT displayText FROM BidWarText WHERE bidWarID = ?"
+            bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (bidWarID, ))
+            if bidWarList[0][0] == description:
+                self.bidWarDict[channelName]["text"] = description
+                return "Successfully updated the '!warinfo' text for the active Bid War!"
+            else:
+                return "Could not update the description in the DB, please let t0rm3n7 know."
         else:
-            return "Could not update the description in the DB, please let t0rm3n7 know."
+            return "No active Bid War, cannot set a description."
 
     def declareWinner(self, channelName):
         # sort to find winner, clear totals, disable bid war
@@ -315,6 +329,40 @@ class BidWar:
             return "Congratulations to Team " + winner + " for winning the Bid War!"
         else:
             return "No active Bid War for which to declare a winner."
+
+    def autoActivate(self, channelName):
+        # After Bot restart, try to load whatever would have been the active Bid War at the time.
+        selectBidWar = "SELECT * FROM BidWarList " \
+                       "INNER JOIN ChannelList cl USING(channelID)" \
+                       "WHERE cl.channelName = ? AND active = 'True'"
+        bidWarList = self.execute_read_query(self.dbConnection, selectBidWar, (channelName, ))
+        if bidWarList:
+            if len(bidWarList) > 1:
+                print("Found multiple active bid wars on auto-load, please investigate.")
+            else:
+                # found active Bid War in database, populate cache
+                newBidWarDict = dict(self.defaultBidWarDict)
+                newBidWarDict["bidWarID"] = bidWarList[0][0]
+                newBidWarDict["channelID"] = bidWarList[0][1]
+                newBidWarDict["name"] = bidWarList[0][2]
+                newBidWarDict["active"] = bidWarList[0][3]
+                newBidWarDict["text"] = bidWarList[0][4]
+                self.bidWarDict.update({channelName: newBidWarDict})
+                selectTeams = "SELECT * FROM BidWarTeamList " \
+                              "WHERE bidWarID = ?"
+                teamsList = self.execute_read_query(self.dbConnection, selectTeams, (newBidWarDict["bidWarID"],))
+                if teamsList:
+                    # found teams for bid war!
+                    for teamRow in teamsList:
+                        teamName = teamRow[2]
+                        teamTotal = teamRow[3]
+                        self.bidWarDict[channelName]["teams"].update({teamName: teamTotal})
+                    print("Bid war found, loaded into cache.")
+                else:
+                    # no teams found for bid war
+                    print("Bid war found, but no teams found. This might be normal, but please check.")
+        else:
+            print("No active Bid Wars found in database.")
 
     def create_connection(self, path):
         connection = None
