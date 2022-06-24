@@ -23,7 +23,7 @@ def get_access_token():
     # print(uri)
 
     authorization_response = \
-        'http://localhost:28888#access_token=868zmnvg8raka08j706d573r28c4uk&' \
+        'http://localhost:28888#access_token=o7uqadtu9bymzpilkejzl4eaioaw4j&' \
         'scope=&state=efElODMWAYfYdq8gYKDSIH0S2650AD&token_type=bearer'
     token = client.fetch_token(authorization_response=authorization_response)
     return token

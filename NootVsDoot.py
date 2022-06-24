@@ -5,6 +5,7 @@ import re
 
 class NootVsDoot:
     # teams should follow format [noot, doot, etc]
+    debug = 0
     defaultTeamsDict = {
         "noot": {
             "name": "noot",
@@ -48,14 +49,22 @@ class NootVsDoot:
         print("noot init")
 
     def cacheChannel(self, channelName):
+        if self.debug == 1:
+            print("attempting to cache channel name")
         selectNVD = "SELECT * FROM ChannelList " \
                     "WHERE channelName = ?"
         NVDList = self.execute_read_query(self.dbConnection, selectNVD, (channelName,))
         if NVDList:
+            if self.debug == 1:
+                print("found channel in DB")
             channelNVD = NVDList[0]
-            self.channelCache.update({channelName: {"name": channelNVD[0], "id": channelNVD[1]}})
+            self.channelCache.update({channelName: {"name": channelNVD[1], "id": channelNVD[0]}})
             self.teamsDict.update({channelName: dict(self.defaultTeamsDict)})
+            if self.debug == 1:
+                print(f"Cached channel from DB: {self.channelCache}")
         else:
+            if self.debug == 1:
+                print("channel not found in DB")
             insertNVD = "INSERT INTO ChannelList (channelName) " \
                         "VALUES (?)"
             self.execute_write_query(self.dbConnection, insertNVD, (channelName,))
@@ -64,8 +73,10 @@ class NootVsDoot:
             NVDList = self.execute_read_query(self.dbConnection, selectNVD, (channelName,))
             if NVDList:
                 channelNVD = NVDList[0]
-                self.channelCache.update({channelName: {"name": channelNVD[0], "id": channelNVD[1]}})
+                self.channelCache.update({channelName: {"name": channelNVD[1], "id": channelNVD[0]}})
                 self.teamsDict.update({channelName: dict(self.defaultTeamsDict)})
+                if self.debug == 1:
+                    print(f"Cached channel and inserted: {self.channelCache}")
             else:
                 print(
                     "Tried to add " + channelName + " to the Channel List DB, but it failed. Problems will probably "
@@ -79,7 +90,7 @@ class NootVsDoot:
     def isThird(self, channelName):
         # returns Third team name and bit total for channelName
         NVDList = self.currentStats(channelName)
-        print(NVDList[0])
+        # print(NVDList[0])
         if NVDList[0][6] and NVDList[0][7]:
             return NVDList[0][6], NVDList[0][7]
         else:
@@ -93,14 +104,22 @@ class NootVsDoot:
         NVDList = self.execute_read_query(self.dbConnection, selectNVD, (channelName, ))
         return NVDList
 
-    def determineWinner(self, channelName):
+    def currentPlaces(self, channelName):
+        # looks up place order for Noot vs Doot
         sortDict = sorted(self.teamsDict[channelName].items(), key=lambda x: x[1]["total"], reverse=True)
-        print(sortDict)
+        # print(sortDict)
         winningTeamDict = dict(sortDict[0][1])
         secondTeamDict = dict(sortDict[1][1])
         thirdTeamDict = dict(sortDict[2][1])
-        winningTeamName = winningTeamDict["name"].Capitalize
-        secondTeamName = secondTeamDict["name"].Capitalize
+        return [winningTeamDict, secondTeamDict, thirdTeamDict]
+
+    def determineWinner(self, channelName):
+        placeDictList = self.currentPlaces(channelName)
+        winningTeamDict = dict(placeDictList[0])
+        secondTeamDict = dict(placeDictList[1])
+        thirdTeamDict = dict(placeDictList[2])
+        winningTeamName = winningTeamDict["name"].capitalize()
+        secondTeamName = secondTeamDict["name"].capitalize()
         if winningTeamDict["total"] == secondTeamDict["total"] and winningTeamDict["total"] == thirdTeamDict["total"]:
             return "Noot vs Doot is over! We have a three way tie as the result! The war for Christmas has reached a " \
                    "cease-fire for now, but they will be back to settle the score!"
@@ -117,13 +136,21 @@ class NootVsDoot:
                     "INNER JOIN ChannelList cl USING(channelID) " \
                     "WHERE cl.channelName = ?"
         NVDList = self.execute_read_query(self.dbConnection, selectNVD, (channelName, ))
-        # print(NVDList[0])
+        print(NVDList[0])
         if NVDList:
-            active = NVDList[0][2]
+            print(NVDList[0][2])
+            if NVDList[0][2] == "False":
+                print("False")
+                active = False
+            else:
+                print("True")
+                active = True
+            print(active)
             if active is True:
+                print("Noot vs Doot is active in DB")
                 self.enableNootVsDoot(channelName)
             else:
-                print("Noot vs Doot is not active for " + channelName)
+                print("Auto Activate: Noot vs Doot is not active for " + channelName)
         else:
             print("No Noot vs Doot entry for " + channelName)
 
@@ -135,23 +162,29 @@ class NootVsDoot:
         activeDB = self.execute_read_query(self.dbConnection, selectNVD, (channelName,))
         if activeDB:
             self.cacheChannel(channelName)
-            # print(activeDB[0])
+            if self.debug == 1:
+                print(f"Read from DB: {activeDB[0]}")
             if activeDB[0][2] == 'True':
                 # is active already so update from table (load if active already)
-                self.teamsDict["noot"]["total"] = activeDB[0][3]
-                self.teamsDict["doot"]["total"] = activeDB[0][4]
-                self.teamsDict["third"]["total"] = activeDB[0][5]
-                self.teamsDict["third"]["name"] = activeDB[0][6]
-                self.teamsDict["third"]["value"] = activeDB[0][7]
-                print("Noot vs Doot is still active, loading values!")
+                # print(self.teamsDict)
+                self.teamsDict[channelName]["noot"]["total"] = activeDB[0][3]
+                self.teamsDict[channelName]["doot"]["total"] = activeDB[0][4]
+                self.teamsDict[channelName]["third"]["total"] = activeDB[0][5]
+                self.teamsDict[channelName]["third"]["name"] = activeDB[0][6]
+                self.teamsDict[channelName]["third"]["value"] = activeDB[0][7]
+                if self.debug == 1:
+                    print("Noot vs Doot is still active, loading values!")
             else:
                 # is not currently active so clear out values in the DB and activate
+                if self.debug == 1:
+                    print(f"attempting to reset NootVsDoot values: {self.channelCache[channelName]['id']}")
                 updateNVD = "UPDATE NootVsDootMain " \
                             "SET active = 'True', nootTotal = 0, dootTotal = 0, " \
                             "thirdTotal = 0, thirdName = NULL, thirdBitAmount = NULL "\
                             "WHERE channelID = ?"
-                self.execute_write_query(self.dbConnection, updateNVD, (self.channelCache,))
-                print("Noot vs Doot is not active, resetting any values and enabling!")
+                self.execute_write_query(self.dbConnection, updateNVD, (self.channelCache[channelName]["id"],))
+                if self.debug == 1:
+                    print("Noot vs Doot is not active, resetting any values and enabling!")
         else:
             # is not in DB yet, add to DB
             self.cacheChannel(channelName)
@@ -272,14 +305,17 @@ class NootVsDoot:
                 print(viewerList)
                 viewerDict = dict(self.defaultViewerDict)
                 viewerDict["id"] = viewerList[0][2]
-                viewerDict["team"] = viewerList[0][3]
+                if viewerList[0][3]:
+                    viewerDict["team"] = viewerList[0][3]
+                else:
+                    viewerDict["team"] = teamName
                 viewerDict["noot"] = viewerList[0][4]
                 viewerDict["doot"] = viewerList[0][5]
                 viewerDict["third"] = viewerList[0][6]
                 viewerDict["captainPoints"] = viewerList[0][7]
                 viewerDict[teamNameLower] += valueToBeAdded  # adds the value to the listed team
                 newCaptainPoints, currentTeam = \
-                    self.adjustTeamCaptainPoints(teamName, viewerDict, valueToBeAdded)
+                    self.adjustTeamCaptainPoints(teamNameLower, viewerDict, valueToBeAdded)
                 updateNVDViewers = "UPDATE NootVsDootViewers " \
                                    "SET currentTeam = ?, nootAmount = ?, dootAmount = ?, " \
                                    "thirdAmount = ?, captainPoints = ? " \

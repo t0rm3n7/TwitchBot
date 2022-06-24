@@ -42,6 +42,7 @@ class BidWar:
                     newBidWarDict["name"] = bidWarList[0][2]
                     newBidWarDict["active"] = bidWarList[0][3]
                     newBidWarDict["text"] = bidWarList[0][4]
+                    newBidWarDict["teams"] = {}
                     self.bidWarDict.update({channelName: newBidWarDict})
                     selectTeams = "SELECT * FROM BidWarTeamList " \
                                   "WHERE bidWarID = ?"
@@ -76,6 +77,7 @@ class BidWar:
                 newBidWarDict["name"] = bidWarList[0][2]
                 newBidWarDict["active"] = "True"
                 newBidWarDict["text"] = bidWarList[0][4]
+                newBidWarDict["teams"] = {}
                 self.bidWarDict.update({channelName: newBidWarDict})
                 updateBidWar = "UPDATE BidWarList " \
                                "SET active = 'True' " \
@@ -117,6 +119,7 @@ class BidWar:
                         newBidWarDict["name"] = bidWarList[0][2]
                         newBidWarDict["active"] = bidWarList[0][3]
                         newBidWarDict["text"] = bidWarList[0][4]
+                        newBidWarDict["teams"] = {}
                         self.bidWarDict.update({channelName: newBidWarDict})
                         return "Bid War started! You can add Teams using the '!war add team' command, and make sure to " \
                                "use the '!war desc' command to set a description to use when the '!warinfo' command is " \
